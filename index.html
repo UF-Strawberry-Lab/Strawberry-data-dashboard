@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Strawberry Export</title>
+  <meta name="robots" content="noindex">
+  <meta name="build" content="2026-11-10 23:44 UTC">
+  <style>
+    :root {
+      --bg: #FAFAF7; --card: #FFFFFF; --text: #1F2421; --muted: #6B716D; --border: #D9DCD6;
+      --accent: #B3263A; --accent-soft: #FBE7EA; --ok: #2E6B3F; --ok-soft: #E4F1E7;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #171917; --card: #222522; --text: #ECEDEA; --muted: #A3A8A4; --border: #3A3E3A;
+              --accent: #E35A6E; --accent-soft: #3A1E24; --ok: #7CC48F; --ok-soft: #1E3324; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text);
+           font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    main { max-width: 640px; margin: 0 auto; padding: 32px 16px 64px; }
+    h1 { font-size: 26px; margin: 0; color: var(--accent); }
+    .sub { color: var(--muted); margin: 2px 0 24px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+    h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 12px; }
+    label.field { display: block; font-weight: 600; margin: 12px 0 4px; }
+    input[type=email], input[type=password], select {
+      width: 100%; padding: 10px 12px; font: inherit; color: var(--text); background: var(--bg);
+      border: 1px solid var(--border); border-radius: 8px; }
+    button { font: inherit; font-weight: 600; padding: 10px 18px; border-radius: 999px; cursor: pointer;
+             border: 1px solid var(--accent); background: var(--accent); color: #fff; }
+    button.quiet { background: transparent; color: var(--accent); border-color: var(--border); }
+    button:disabled { opacity: .5; cursor: default; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 16px; }
+    .trials { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 6px 12px; }
+    .trials label { display: flex; gap: 8px; align-items: center; padding: 4px 0; }
+    .trials label.all { grid-column: 1 / -1; font-weight: 600; border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 4px; }
+    .msg { margin-top: 14px; padding: 10px 12px; border-radius: 8px; white-space: pre-wrap; }
+    .msg.err { background: var(--accent-soft); color: var(--accent); }
+    .msg.ok { background: var(--ok-soft); color: var(--ok); }
+    .hint { color: var(--muted); font-size: 14px; margin: 6px 0 0; }
+    .who { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Strawberry Field</h1>
+  <p class="sub">Data export</p>
+
+  <!-- Sign in with the same email and password as the field app. -->
+  <section class="card" id="login" hidden>
+    <h2>Sign in</h2>
+    <form id="loginForm">
+      <label class="field" for="email">Email</label>
+      <input id="email" type="email" autocomplete="username" required>
+      <label class="field" for="password">Password</label>
+      <input id="password" type="password" autocomplete="current-password" required>
+      <div class="row"><button id="loginBtn" type="submit">Sign in</button></div>
+    </form>
+    <p class="hint">Use your field app account. New accounts are created by the data manager.</p>
+    <div class="msg err" id="loginMsg" hidden></div>
+  </section>
+
+  <section id="app" hidden>
+    <div class="card who">
+      <div>Signed in as <strong id="whoName"></strong><br><span class="hint" id="whoSeason"></span></div>
+      <div class="row" style="margin-top:0">
+        <button class="quiet" id="pwBtn" type="button">Change password</button>
+        <button class="quiet" id="logoutBtn" type="button">Sign out</button>
+      </div>
+    </div>
+
+    <!-- Change password: works for the field app too (same account). -->
+    <form class="card" id="pwForm" hidden>
+      <h2>Change password</h2>
+      <label class="field" for="pw1">New password</label>
+      <input id="pw1" type="password" autocomplete="new-password" minlength="8" required>
+      <label class="field" for="pw2">New password again</label>
+      <input id="pw2" type="password" autocomplete="new-password" minlength="8" required>
+      <p class="hint">At least 8 characters. This is also your field app password.</p>
+      <div class="row">
+        <button id="pwSave" type="submit">Save password</button>
+        <button class="quiet" id="pwCancel" type="button">Cancel</button>
+      </div>
+      <div class="msg" id="pwMsg" hidden></div>
+    </form>
+
+    <div class="card" id="notApproved" hidden>
+      <h2>Not approved yet</h2>
+      <p>This account can't export data yet. Ask the data manager to approve it, then reload this page.</p>
+    </div>
+
+    <form class="card" id="exportForm" hidden>
+      <h2>What to export</h2>
+      <div class="trials" id="trials"></div>
+      <label class="field" for="week">Weeks</label>
+      <select id="week"></select>
+      <p class="hint">Weeks run Monday to Sunday. A bed shared by two trials counts for both.</p>
+      <div class="row">
+        <button id="exportBtn" type="submit">Save as…</button>
+        <button id="downloadBtn" type="button" class="quiet">Download</button>
+      </div>
+      <p class="hint" id="saveHint"></p>
+      <div class="msg" id="exportMsg" hidden></div>
+    </form>
+  </section>
+  <p class="hint" id="version"></p>
+</main>
+<script type="module" src="./main.js?v=1794354266329"></script>
+</body>
+</html>
