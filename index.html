@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Strawberry Export</title>
   <meta name="robots" content="noindex">
-  <meta name="build" content="2026-11-11 16:53 UTC">
+  <meta name="build" content="2026-11-11 17:16 UTC">
   <style>
     :root {
       --bg: #FAFAF7; --card: #FFFFFF; --text: #1F2421; --muted: #6B716D; --border: #D9DCD6;
@@ -47,6 +47,7 @@
     table.lists th { color: var(--muted); font-weight: 600; }
     table.lists tr.archived td { color: var(--muted); }
     table.lists button { padding: 4px 10px; font-size: 13px; }
+    h3.sub3 { font-size: 15px; margin: 18px 0 6px; }
     [hidden] { display: none !important; }
   </style>
 </head>
@@ -115,12 +116,17 @@
 
     <!-- Admins: student selections waiting for review. -->
     <section class="card" id="reviewCard" hidden>
-      <h2>Selections to review</h2>
+      <h2>To review</h2>
+      <h3 class="sub3">Student selections</h3>
       <p class="hint" style="margin-top:0">Students' Select = YES waits here. In the app it shows darker yellow until reviewed.
         Approve keeps it; Reject deletes it.</p>
       <div id="reviewList"></div>
-      <div class="row"><button id="approveAll" type="button" hidden>Approve all</button>
-        <button class="quiet" type="button" id="reviewRefresh">Refresh</button></div>
+      <div class="row"><button id="approveAll" type="button" hidden>Approve all</button></div>
+      <h3 class="sub3">Field-map edits by crew</h3>
+      <p class="hint" style="margin-top:0">Already applied in the field. Approve keeps the edit; Reject undoes it
+        (scores follow the plot back to its original genotype).</p>
+      <div id="mapChangeList"></div>
+      <div class="row"><button class="quiet" type="button" id="reviewRefresh">Refresh</button></div>
       <div class="msg" id="reviewMsg" hidden></div>
     </section>
 
@@ -151,6 +157,6 @@
   </section>
   <p class="hint" id="version"></p>
 </main>
-<script type="module" src="./main.js?v=1794416013239"></script>
+<script type="module" src="./main.js?v=1794417390011"></script>
 </body>
 </html>

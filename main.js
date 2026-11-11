@@ -118,6 +118,7 @@ async function start() {
   if (meInfo?.isAdmin) {
     $('reviewCard').hidden = false;
     void showReview();
+    void showMapChanges();
   }
   if (role !== 'admin' && role !== 'student') {
     $('notApproved').hidden = false;
@@ -248,7 +249,7 @@ async function doExport(saveAs) {
 // A student's Select = YES waits here (observations.needs_review). Approve
 // keeps it; Reject deletes it, and phones drop it on their next sync.
 
-$('reviewRefresh').addEventListener('click', () => void showReview());
+$('reviewRefresh').addEventListener('click', () => { void showReview(); void showMapChanges(); });
 
 async function showReview() {
   const box = $('reviewList');
@@ -299,6 +300,46 @@ async function showReview() {
     $('approveAll').disabled = false;
     await showReview();
   };
+}
+
+// Crew field-map edits: already applied; Approve keeps, Reject undoes (review_map_change()).
+const CHANGE_LABELS = { change_genotype: 'Changed genotype', add_genotype: 'Added genotype', add_plot: 'Added plot' };
+
+async function showMapChanges() {
+  const box = $('mapChangeList');
+  const { data, error } = await supabase.rpc('pending_map_changes');
+  box.innerHTML = '';
+  if (error) { box.textContent = error.message; return; }
+  if (!data.length) { box.innerHTML = '<p class="hint">Nothing waiting for review.</p>'; return; }
+  const table = document.createElement('table');
+  table.className = 'lists';
+  table.innerHTML = '<tr><th>Date</th><th>By</th><th>Edit</th><th>Where</th><th></th></tr>';
+  for (const x of data) {
+    const tr = table.insertRow();
+    const cell = (text) => { const td = tr.insertCell(); td.textContent = text; return td; };
+    cell(md(x.changed_at.slice(0, 10)));
+    cell(x.researcher);
+    cell(`${CHANGE_LABELS[x.change_type] ?? x.change_type}: ${x.description ?? ''}`);
+    cell(x.block ? `${x.trials ?? ''} · ${x.block}-${x.field_bed} · pos ${x.plot_position} (stake ${x.stake_label})` : '');
+    const td = tr.insertCell();
+    td.style.whiteSpace = 'nowrap';
+    const button = (label, approve) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      if (!approve) b.className = 'quiet';
+      b.addEventListener('click', async () => {
+        if (!approve && !confirm('Undo this edit?')) return;
+        td.querySelectorAll('button').forEach((y) => { y.disabled = true; });
+        const { error: err } = await supabase.rpc('review_map_change', { p_change_id: x.change_id, p_approve: approve });
+        if (err) { show($('reviewMsg'), err.message, 'err'); td.querySelectorAll('button').forEach((y) => { y.disabled = false; }); return; }
+        await showMapChanges();
+      });
+      return b;
+    };
+    td.append(button('Approve', true), ' ', button('Reject', false));
+  }
+  box.append(table);
 }
 
 // ---------------- highlight lists ----------------
