@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Strawberry Export</title>
+  <title>UF Strawberry Dashboard</title>
   <meta name="robots" content="noindex">
-  <meta name="build" content="2026-11-11 17:36 UTC">
+  <meta name="build" content="2026-11-11 18:30 UTC">
   <style>
     :root {
       --bg: #FAFAF7; --card: #FFFFFF; --text: #1F2421; --muted: #6B716D; --border: #D9DCD6;
@@ -18,7 +18,7 @@
     * { box-sizing: border-box; }
     body { margin: 0; background: var(--bg); color: var(--text);
            font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-    main { max-width: 640px; margin: 0 auto; padding: 32px 16px 64px; }
+    main { max-width: 960px; margin: 0 auto; padding: 32px 16px 64px; }
     h1 { font-size: 26px; margin: 0; color: var(--accent); }
     .sub { color: var(--muted); margin: 2px 0 24px; }
     .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 16px; }
@@ -48,13 +48,24 @@
     table.lists tr.archived td { color: var(--muted); }
     table.lists button { padding: 4px 10px; font-size: 13px; }
     h3.sub3 { font-size: 15px; margin: 18px 0 6px; }
+    /* Tabs */
+    .tabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 2px solid var(--border); margin: 0 0 16px; }
+    .tabs button { background: transparent; color: var(--muted); border: none; border-bottom: 3px solid transparent;
+                   border-radius: 0; padding: 10px 14px; margin-bottom: -2px; }
+    .tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tabs .count { display: inline-block; min-width: 20px; padding: 0 6px; border-radius: 999px; font-size: 12px;
+                   background: var(--accent); color: #fff; margin-left: 4px; }
+    /* Members table: inputs sized to their content, not squeezed */
+    table.lists input[type=text] { padding: 6px 8px; min-width: 9em; }
+    table.lists select { width: auto; min-width: 7.5em; padding: 6px 8px; }
+    .scroll { overflow-x: auto; }
     [hidden] { display: none !important; }
   </style>
 </head>
 <body>
 <main>
-  <h1>Strawberry Field</h1>
-  <p class="sub">Data export</p>
+  <h1>UF Strawberry Dashboard</h1>
+  <p class="sub">Field data, reviews and lab members</p>
 
   <!-- Sign in with the same email and password as the field app. -->
   <section class="card" id="login" hidden>
@@ -94,6 +105,18 @@
       <div class="msg" id="pwMsg" hidden></div>
     </form>
 
+    <!-- Tabs: each person sees only the tabs their role allows (main.js). -->
+    <nav class="tabs" id="tabs" hidden>
+      <button type="button" data-tab="export" hidden>Data export</button>
+      <button type="button" data-tab="review" hidden>Review changes <span class="count" id="reviewCount" hidden></span></button>
+      <button type="button" data-tab="members" hidden>Lab members</button>
+      <button type="button" data-tab="highlights" hidden>Highlight genotypes</button>
+    </nav>
+    <div class="card" id="noTabs" hidden>
+      <p>Nothing here for this account: crew accounts use the field app only. Ask an admin if that seems wrong.</p>
+    </div>
+
+    <div data-panel="export" hidden>
     <div class="card" id="notApproved" hidden>
       <h2>No exports for this account</h2>
       <p>Exports are for admins and students. Ask an admin to check your role, then reload this page.</p>
@@ -113,7 +136,9 @@
       <p class="hint" id="saveHint"></p>
       <div class="msg" id="exportMsg" hidden></div>
     </form>
+    </div>
 
+    <div data-panel="review" hidden>
     <!-- Admins: student selections waiting for review. -->
     <section class="card" id="reviewCard" hidden>
       <h2>To review</h2>
@@ -129,7 +154,9 @@
       <div class="row"><button class="quiet" type="button" id="reviewRefresh">Refresh</button></div>
       <div class="msg" id="reviewMsg" hidden></div>
     </section>
+    </div>
 
+    <div data-panel="members" hidden>
     <!-- Admins: lab members (accounts, roles, crew trials). Account actions go
          through the Edge Function "lab-members"; the secret key stays on Supabase. -->
     <section class="card" id="membersCard" hidden>
@@ -143,9 +170,10 @@
         <label class="field" for="addRole">Role</label>
         <select id="addRole">
           <option value="student">Student: all trials, exports student data, selections reviewed</option>
-          <option value="admin">Admin: everything, reviews, manages members</option>
           <option value="crew">Crew: shared lab phone, assigned trials only</option>
         </select>
+        <p class="hint">Admins are made only in Supabase (Table editor -> researchers -> role), so nobody
+          becomes or stops being an admin by accident here. To add an admin: add them as a student, then change the role there.</p>
         <div id="crewPwBox" hidden>
           <label class="field" for="addPw">Password for the phone (at least 8 characters)</label>
           <input id="addPw" type="text" autocomplete="off" minlength="8">
@@ -177,7 +205,9 @@
         <button id="unassignBtn" type="button" class="quiet">Remove trial</button>
       </div>
     </section>
+    </div>
 
+    <div data-panel="highlights" hidden>
     <!-- Highlight lists: genotypes to find in the field (colored bars in the app). -->
     <section class="card" id="hlCard" hidden>
       <h2>Highlight lists</h2>
@@ -202,9 +232,10 @@
       <div id="hlLists"></div>
       <p class="hint">Phones pick up changes the next time they open a trial with signal. Archived lists stop showing in the app.</p>
     </section>
+    </div>
   </section>
   <p class="hint" id="version"></p>
 </main>
-<script type="module" src="./main.js?v=1794418568787"></script>
+<script type="module" src="./main.js?v=1794421853931"></script>
 </body>
 </html>

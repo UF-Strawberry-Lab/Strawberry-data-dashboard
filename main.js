@@ -119,9 +119,9 @@ async function start() {
     $('membersCard').hidden = false;
     void showMembers();
     $('reviewCard').hidden = false;
-    void showReview();
-    void showMapChanges();
+    void refreshReview();
   }
+  setUpTabs(TABS_BY_ROLE[role] ?? []);
   if (role !== 'admin' && role !== 'student') {
     $('notApproved').hidden = false;
     return;
@@ -251,6 +251,43 @@ async function doExport(saveAs) {
 // A student's Select = YES waits here (observations.needs_review). Approve
 // keeps it; Reject deletes it, and phones drop it on their next sync.
 
+// ---------------- tabs ----------------
+// One panel per tab (data-panel in index.html). The address keeps the tab
+// (#review), so a reload or a bookmark opens the same one.
+const TABS_BY_ROLE = {
+  admin: ['export', 'review', 'members', 'highlights'],
+  student: ['export', 'highlights'],
+  crew: [],
+};
+
+function setUpTabs(allowed) {
+  $('tabs').hidden = !allowed.length;
+  $('noTabs').hidden = allowed.length > 0;
+  for (const b of document.querySelectorAll('#tabs button')) {
+    b.hidden = !allowed.includes(b.dataset.tab);
+    b.onclick = () => showTab(b.dataset.tab);
+  }
+  const wanted = location.hash.slice(1);
+  if (allowed.length) showTab(allowed.includes(wanted) ? wanted : allowed[0]);
+}
+
+function showTab(name) {
+  for (const p of document.querySelectorAll('[data-panel]')) p.hidden = p.dataset.panel !== name;
+  for (const b of document.querySelectorAll('#tabs button')) b.classList.toggle('active', b.dataset.tab === name);
+  history.replaceState(null, '', `#${name}`);
+}
+
+// Review tab: both lists, and the number waiting shown on the tab.
+const waiting = { selections: 0, edits: 0 };
+function showWaiting() {
+  const n = waiting.selections + waiting.edits;
+  $('reviewCount').hidden = n === 0;
+  $('reviewCount').textContent = String(n);
+}
+async function refreshReview() {
+  await Promise.all([showReview(), showMapChanges()]);
+}
+
 // ---------------- lab members (admins) ----------------
 // Listing and name/role changes: database functions list_lab_members() and
 // set_lab_member(). Creating accounts, links and crew passwords: the Edge
@@ -319,9 +356,17 @@ async function showMembers() {
     nameIn.value = m.name;
     nameIn.style.minWidth = '8em';
     tr.insertCell().append(nameIn);
+    // Admins are changed only in Supabase: their role shows as text here.
+    // Everyone else can be switched between student and crew.
     const roleSel = document.createElement('select');
-    for (const r of ['admin', 'student', 'crew']) roleSel.add(new Option(r, r, false, r === m.role));
-    tr.insertCell().append(roleSel);
+    if (m.role === 'admin') {
+      const td = tr.insertCell();
+      td.textContent = 'admin';
+      td.title = 'Admin roles are changed only in Supabase (Table editor -> researchers).';
+    } else {
+      for (const r of ['student', 'crew']) roleSel.add(new Option(r, r, false, r === m.role));
+      tr.insertCell().append(roleSel);
+    }
     const cell = (text) => { const td = tr.insertCell(); td.textContent = text; return td; };
     cell(m.email ?? '');
     cell(m.role === 'crew' ? (m.trials ?? 'none') : 'all');
@@ -341,9 +386,10 @@ async function showMembers() {
       td.append(b, ' ');
     };
     btn('Save', false, async () => {
-      const { error: err } = await supabase.rpc('set_lab_member', { p_researcher_id: m.researcher_id, p_name: nameIn.value, p_role: roleSel.value });
+      const newRole = m.role === 'admin' ? 'admin' : roleSel.value;
+      const { error: err } = await supabase.rpc('set_lab_member', { p_researcher_id: m.researcher_id, p_name: nameIn.value, p_role: newRole });
       if (err) throw new Error(err.message);
-      show($('memberMsg'), `Saved ${nameIn.value.trim()} (${roleSel.value}). They see the change next time the app or page loads.`, 'ok');
+      show($('memberMsg'), `Saved ${nameIn.value.trim()} (${newRole}). They see the change next time the app or page loads.`, 'ok');
       await showMembers();
     });
     if (m.role === 'crew') {
@@ -361,7 +407,10 @@ async function showMembers() {
       });
     }
   }
-  box.append(table);
+  const wrap = document.createElement('div');
+  wrap.className = 'scroll';   // narrow screens scroll the table, not the page
+  wrap.append(table);
+  box.append(wrap);
 
   // Crew trial assignment: crew accounts and this season's trials.
   const who = $('assignWho');
@@ -387,13 +436,15 @@ async function assign(give) {
 $('assignBtn').addEventListener('click', () => void assign(true));
 $('unassignBtn').addEventListener('click', () => void assign(false));
 
-$('reviewRefresh').addEventListener('click', () => { void showReview(); void showMapChanges(); });
+$('reviewRefresh').addEventListener('click', () => void refreshReview());
 
 async function showReview() {
   const box = $('reviewList');
   const { data, error } = await supabase.rpc('pending_selections');
   box.innerHTML = '';
   $('approveAll').hidden = true;
+  waiting.selections = data?.length ?? 0;
+  showWaiting();
   if (error) { box.textContent = error.message; return; }
   if (!data.length) { box.innerHTML = '<p class="hint">Nothing waiting for review.</p>'; return; }
   const table = document.createElement('table');
@@ -419,8 +470,7 @@ async function showReview() {
         td.querySelectorAll('button').forEach((y) => { y.disabled = true; });
         const { error: err } = await supabase.rpc('review_selection', { p_observation_id: x.observation_id, p_approve: approve });
         if (err) { show($('reviewMsg'), err.message, 'err'); td.querySelectorAll('button').forEach((y) => { y.disabled = false; }); return; }
-        tr.remove();
-        if (table.rows.length === 1) await showReview();
+        await showReview();
       });
       return b;
     };
@@ -447,6 +497,8 @@ async function showMapChanges() {
   const box = $('mapChangeList');
   const { data, error } = await supabase.rpc('pending_map_changes');
   box.innerHTML = '';
+  waiting.edits = data?.length ?? 0;
+  showWaiting();
   if (error) { box.textContent = error.message; return; }
   if (!data.length) { box.innerHTML = '<p class="hint">Nothing waiting for review.</p>'; return; }
   const table = document.createElement('table');
