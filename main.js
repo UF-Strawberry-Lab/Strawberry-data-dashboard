@@ -94,7 +94,7 @@ async function start() {
   }
 
   // Trials of the current season.
-  const { data: trials, error } = await supabase.from('trials').select('name').eq('season_id', season.id).order('name');
+  const { data: trials, error } = await supabase.rpc('export_trials');   // every trial, for approved exporters
   if (error) return show($('exportMsg'), error.message, 'err');
   const box = $('trials');
   box.innerHTML = '';
