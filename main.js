@@ -3,7 +3,8 @@
 //
 // The data comes from the database function export_data()
 // (supabase/migrations/20261110000001_export_access.sql), which refuses
-// anyone whose researchers.can_export isn't ticked. The files are built by
+// anyone who isn't an admin or student (researchers.role), and gives students
+// only data collected by students. The files are built by
 // the same code as `npm run export` (scripts/export/format.ts, copied in by
 // build.ts), so the two always match.
 
@@ -15,6 +16,12 @@ import { makeZip } from './zip.js';
 import { HIGHLIGHT_COLORS, parseHighlightRows } from './lib/highlights.js';
 import { parseCsv } from './lib/csv.js';
 
+// Opened from a sign-up or password-reset link (npm run invite / reset-link)?
+// The link signs them in; read its type before the Supabase client clears
+// the address, so the page can ask for a new password straight away.
+const linkParams = new URLSearchParams(location.hash.slice(1));
+const arrivedFrom = linkParams.get('type');                 // 'invite' | 'recovery' | null
+const linkError = linkParams.get('error_description');     // e.g. the link expired
 const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 const $ = (id) => document.getElementById(id);
 const canSaveAs = typeof window.showSaveFilePicker === 'function';   // Chrome and Edge on a computer
@@ -81,24 +88,42 @@ async function start() {
   const { data: { session } } = await supabase.auth.getSession();
   $('login').hidden = !!session;
   $('app').hidden = !session;
-  if (!session) return;
+  if (!session) {
+    if (arrivedFrom || linkError) show($('loginMsg'), `That link didn't work (${linkError ?? 'expired or already used'}). Ask an admin for a new one.`, 'err');
+    return;
+  }
+  if (arrivedFrom === 'invite' || arrivedFrom === 'recovery') {
+    $('pwForm').hidden = false;
+    show($('pwMsg'), arrivedFrom === 'invite'
+      ? 'Welcome! Choose a password. You will use it here and in the field app.'
+      : 'Choose a new password. It works here and in the field app.', 'ok');
+    history.replaceState(null, '', location.pathname);   // a reload shouldn't show this again
+  }
 
   const [me, seasonRes] = await Promise.all([
-    supabase.from('researchers').select('id, name, can_export, is_admin').eq('auth_user_id', session.user.id).maybeSingle(),
+    supabase.from('researchers').select('id, name, role').eq('auth_user_id', session.user.id).maybeSingle(),
     supabase.from('seasons').select('id, name, start_date').eq('is_current', true).maybeSingle(),
   ]);
+  // Roles (docs/spec/access.md): admin and student export and upload
+  // highlight lists; admins also review student selections; crew do neither.
+  const role = me.data?.role ?? 'crew';
+  const meInfo = me.data ? { id: me.data.id, isAdmin: role === 'admin' } : null;
   $('whoName').textContent = me.data?.name ?? session.user.email;
   season = seasonRes.data;
-  $('whoSeason').textContent = season ? `Season ${season.name}` : 'No current season';
-  if (me.data && season) {
-    // Highlight lists: for every researcher, export approval or not.
+  $('whoSeason').textContent = season ? `Season ${season.name} · ${role}` : 'No current season';
+  if (meInfo && season && role !== 'crew') {
     $('hlCard').hidden = false;
-    void showLists(me.data);
+    void showLists(meInfo);
   }
-  if (!me.data?.can_export) {
+  if (meInfo?.isAdmin) {
+    $('reviewCard').hidden = false;
+    void showReview();
+  }
+  if (role !== 'admin' && role !== 'student') {
     $('notApproved').hidden = false;
     return;
   }
+  if (role === 'student') $('studentHint').hidden = false;
 
   // Trials of the current season.
   const { data: trials, error } = await supabase.rpc('export_trials');   // every trial, for approved exporters
@@ -219,6 +244,63 @@ async function doExport(saveAs) {
   }
 }
 
+// ---------------- review student selections (admins) ----------------
+// A student's Select = YES waits here (observations.needs_review). Approve
+// keeps it; Reject deletes it, and phones drop it on their next sync.
+
+$('reviewRefresh').addEventListener('click', () => void showReview());
+
+async function showReview() {
+  const box = $('reviewList');
+  const { data, error } = await supabase.rpc('pending_selections');
+  box.innerHTML = '';
+  $('approveAll').hidden = true;
+  if (error) { box.textContent = error.message; return; }
+  if (!data.length) { box.innerHTML = '<p class="hint">Nothing waiting for review.</p>'; return; }
+  const table = document.createElement('table');
+  table.className = 'lists';
+  table.innerHTML = '<tr><th>Date</th><th>By</th><th>Where</th><th>Genotype</th><th></th></tr>';
+  for (const x of data) {
+    const tr = table.insertRow();
+    const cell = (text) => { const td = tr.insertCell(); td.textContent = text; return td; };
+    cell(md(x.visit_date));
+    cell(x.researcher);
+    const bed = x.trial_bed ? `bed ${x.trial_bed}` : `${x.block}-${x.field_bed}`;
+    cell(`${x.trials ?? ''} · ${bed} · pos ${x.plot_position}`);
+    cell(`${x.genotype}${x.stake_label !== x.genotype ? ` (stake ${x.stake_label})` : ''}`);
+    const td = tr.insertCell();
+    td.style.whiteSpace = 'nowrap';
+    const button = (label, approve) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      if (!approve) b.className = 'quiet';
+      b.addEventListener('click', async () => {
+        if (!approve && !confirm(`Reject ${x.researcher}'s selection of ${x.genotype}? The YES is deleted.`)) return;
+        td.querySelectorAll('button').forEach((y) => { y.disabled = true; });
+        const { error: err } = await supabase.rpc('review_selection', { p_observation_id: x.observation_id, p_approve: approve });
+        if (err) { show($('reviewMsg'), err.message, 'err'); td.querySelectorAll('button').forEach((y) => { y.disabled = false; }); return; }
+        tr.remove();
+        if (table.rows.length === 1) await showReview();
+      });
+      return b;
+    };
+    td.append(button('Approve', true), ' ', button('Reject', false));
+  }
+  box.append(table);
+  $('approveAll').hidden = false;
+  $('approveAll').onclick = async () => {
+    if (!confirm(`Approve all ${data.length} selections shown?`)) return;
+    $('approveAll').disabled = true;
+    for (const x of data) {
+      const { error: err } = await supabase.rpc('review_selection', { p_observation_id: x.observation_id, p_approve: true });
+      if (err) show($('reviewMsg'), err.message, 'err');
+    }
+    $('approveAll').disabled = false;
+    await showReview();
+  };
+}
+
 // ---------------- highlight lists ----------------
 // Upload: the CSV is checked here first (lib/highlights.js, the same rules
 // the tests cover), then upload_highlight_list() checks genotype and trial
@@ -283,7 +365,7 @@ async function showLists(me) {
     cell(l.visibility === 'everyone' ? 'Everyone' : 'Just them');
     cell(String(l.highlight_list_items?.[0]?.count ?? ''));
     const td = tr.insertCell();
-    if (l.created_by === me.id || me.is_admin) {
+    if (l.created_by === me.id || me.isAdmin) {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'quiet';

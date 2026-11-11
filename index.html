@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Strawberry Export</title>
   <meta name="robots" content="noindex">
-  <meta name="build" content="2026-11-11 16:45 UTC">
+  <meta name="build" content="2026-11-11 16:53 UTC">
   <style>
     :root {
       --bg: #FAFAF7; --card: #FFFFFF; --text: #1F2421; --muted: #6B716D; --border: #D9DCD6;
@@ -94,8 +94,8 @@
     </form>
 
     <div class="card" id="notApproved" hidden>
-      <h2>Not approved yet</h2>
-      <p>This account can't export data yet. Ask the data manager to approve it, then reload this page.</p>
+      <h2>No exports for this account</h2>
+      <p>Exports are for admins and students. Ask an admin to check your role, then reload this page.</p>
     </div>
 
     <form class="card" id="exportForm" hidden>
@@ -104,6 +104,7 @@
       <label class="field" for="week">Weeks</label>
       <select id="week"></select>
       <p class="hint">Weeks run Monday to Sunday. A bed shared by two trials counts for both.</p>
+      <p class="hint" id="studentHint" hidden>Student accounts export the data collected by students.</p>
       <div class="row">
         <button id="exportBtn" type="submit">Save as…</button>
         <button id="downloadBtn" type="button" class="quiet">Download</button>
@@ -111,6 +112,17 @@
       <p class="hint" id="saveHint"></p>
       <div class="msg" id="exportMsg" hidden></div>
     </form>
+
+    <!-- Admins: student selections waiting for review. -->
+    <section class="card" id="reviewCard" hidden>
+      <h2>Selections to review</h2>
+      <p class="hint" style="margin-top:0">Students' Select = YES waits here. In the app it shows darker yellow until reviewed.
+        Approve keeps it; Reject deletes it.</p>
+      <div id="reviewList"></div>
+      <div class="row"><button id="approveAll" type="button" hidden>Approve all</button>
+        <button class="quiet" type="button" id="reviewRefresh">Refresh</button></div>
+      <div class="msg" id="reviewMsg" hidden></div>
+    </section>
 
     <!-- Highlight lists: genotypes to find in the field (colored bars in the app). -->
     <section class="card" id="hlCard" hidden>
@@ -139,6 +151,6 @@
   </section>
   <p class="hint" id="version"></p>
 </main>
-<script type="module" src="./main.js?v=1794415556309"></script>
+<script type="module" src="./main.js?v=1794416013239"></script>
 </body>
 </html>
