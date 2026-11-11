@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Strawberry Export</title>
   <meta name="robots" content="noindex">
-  <meta name="build" content="2026-11-11 00:18 UTC">
+  <meta name="build" content="2026-11-11 16:45 UTC">
   <style>
     :root {
       --bg: #FAFAF7; --card: #FFFFFF; --text: #1F2421; --muted: #6B716D; --border: #D9DCD6;
@@ -24,7 +24,7 @@
     .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 16px; }
     h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 12px; }
     label.field { display: block; font-weight: 600; margin: 12px 0 4px; }
-    input[type=email], input[type=password], select {
+    input[type=email], input[type=password], input[type=text], select {
       width: 100%; padding: 10px 12px; font: inherit; color: var(--text); background: var(--bg);
       border: 1px solid var(--border); border-radius: 8px; }
     button { font: inherit; font-weight: 600; padding: 10px 18px; border-radius: 999px; cursor: pointer;
@@ -40,6 +40,13 @@
     .msg.ok { background: var(--ok-soft); color: var(--ok); }
     .hint { color: var(--muted); font-size: 14px; margin: 6px 0 0; }
     .who { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin: 0 3px 0 8px; vertical-align: -1px; }
+    .radio { display: flex; gap: 8px; align-items: center; padding: 3px 0; }
+    table.lists { width: 100%; border-collapse: collapse; font-size: 14px; }
+    table.lists td, table.lists th { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    table.lists th { color: var(--muted); font-weight: 600; }
+    table.lists tr.archived td { color: var(--muted); }
+    table.lists button { padding: 4px 10px; font-size: 13px; }
     [hidden] { display: none !important; }
   </style>
 </head>
@@ -104,9 +111,34 @@
       <p class="hint" id="saveHint"></p>
       <div class="msg" id="exportMsg" hidden></div>
     </form>
+
+    <!-- Highlight lists: genotypes to find in the field (colored bars in the app). -->
+    <section class="card" id="hlCard" hidden>
+      <h2>Highlight lists</h2>
+      <p class="hint" style="margin-top:0">Genotypes to find in the field. Their plots get a colored bar in the field app's bed view.</p>
+      <form id="hlForm">
+        <label class="field" for="hlName">List name</label>
+        <input id="hlName" type="text" required placeholder="e.g. Tissue samples, week 3">
+        <label class="field" for="hlFile">CSV file</label>
+        <input id="hlFile" type="file" accept=".csv,text/csv" required>
+        <p class="hint">Columns: <strong>genotype</strong>, <strong>color</strong>, and optionally <strong>trial</strong>
+          (highlight only in that trial). Colors:<span id="hlColors"></span></p>
+        <label class="field">Who sees it</label>
+        <label class="radio"><input type="radio" name="hlVis" value="me" checked> Just me</label>
+        <label class="radio"><input type="radio" name="hlVis" value="everyone"> Everyone (in the trials where those genotypes are)</label>
+        <div class="row">
+          <button id="hlUpload" type="submit">Upload list</button>
+          <button class="quiet" id="hlTemplate" type="button">Download a template</button>
+        </div>
+        <div class="msg" id="hlMsg" hidden></div>
+      </form>
+      <h2 style="margin-top:24px">Lists this season</h2>
+      <div id="hlLists"></div>
+      <p class="hint">Phones pick up changes the next time they open a trial with signal. Archived lists stop showing in the app.</p>
+    </section>
   </section>
   <p class="hint" id="version"></p>
 </main>
-<script type="module" src="./main.js?v=1794356332279"></script>
+<script type="module" src="./main.js?v=1794415556309"></script>
 </body>
 </html>

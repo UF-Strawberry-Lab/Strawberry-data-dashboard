@@ -12,6 +12,8 @@ import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './config.js';
 import { buildExport, TIME_ZONE } from './lib/format.js';
 import { weekDates, weekNumber } from './lib/selections.js';
 import { makeZip } from './zip.js';
+import { HIGHLIGHT_COLORS, parseHighlightRows } from './lib/highlights.js';
+import { parseCsv } from './lib/csv.js';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 const $ = (id) => document.getElementById(id);
@@ -82,12 +84,17 @@ async function start() {
   if (!session) return;
 
   const [me, seasonRes] = await Promise.all([
-    supabase.from('researchers').select('name, can_export').eq('auth_user_id', session.user.id).maybeSingle(),
+    supabase.from('researchers').select('id, name, can_export, is_admin').eq('auth_user_id', session.user.id).maybeSingle(),
     supabase.from('seasons').select('id, name, start_date').eq('is_current', true).maybeSingle(),
   ]);
   $('whoName').textContent = me.data?.name ?? session.user.email;
   season = seasonRes.data;
   $('whoSeason').textContent = season ? `Season ${season.name}` : 'No current season';
+  if (me.data && season) {
+    // Highlight lists: for every researcher, export approval or not.
+    $('hlCard').hidden = false;
+    void showLists(me.data);
+  }
   if (!me.data?.can_export) {
     $('notApproved').hidden = false;
     return;
@@ -212,5 +219,86 @@ async function doExport(saveAs) {
   }
 }
 
-$('version').textContent = `Page version ${document.querySelector('meta[name=build]')?.content ?? 'dev'}`;
+// ---------------- highlight lists ----------------
+// Upload: the CSV is checked here first (lib/highlights.js, the same rules
+// the tests cover), then upload_highlight_list() checks genotype and trial
+// names and saves the whole list, or nothing.
+
+let meRow = null;
+
+$('hlColors').append(...Object.entries(HIGHLIGHT_COLORS).flatMap(([name, hex]) => {
+  const sw = document.createElement('span');
+  sw.className = 'sw';
+  sw.style.background = hex;
+  return [sw, name];
+}));
+
+$('hlTemplate').addEventListener('click', () => {
+  const csv = 'genotype,color,trial\r\n26.52-14,red,\r\n26.70-1,blue,MainStage1\r\n';
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = 'highlight_list_template.csv';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+});
+
+$('hlForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = $('hlMsg');
+  const file = $('hlFile').files[0];
+  if (!file) return show(msg, 'Choose a CSV file.', 'err');
+  const parsed = parseCsv(await file.text());
+  const { rows, errors } = parseHighlightRows(parsed.headers, parsed.rows);
+  if (errors.length) return show(msg, `Nothing was uploaded. Fix these and try again:\n${errors.slice(0, 40).join('\n')}`, 'err');
+  $('hlUpload').disabled = true;
+  show(msg, `Checking ${rows.length} genotypes…`, 'ok');
+  const visibility = document.querySelector('input[name=hlVis]:checked').value;
+  const { error } = await supabase.rpc('upload_highlight_list', { p_name: $('hlName').value, p_visibility: visibility, p_items: rows });
+  $('hlUpload').disabled = false;
+  if (error) return show(msg, error.message, 'err');
+  $('hlForm').reset();
+  show(msg, `Uploaded: ${rows.length} genotypes.`, 'ok');
+  await showLists(meRow);
+});
+
+/** The season's lists I can see, newest first, with Archive for my own (all, for admins). */
+async function showLists(me) {
+  meRow = me;
+  const box = $('hlLists');
+  const { data, error } = await supabase.from('highlight_lists')
+    .select('id, name, visibility, created_at, archived_at, created_by, researchers(name), highlight_list_items(count)')
+    .eq('season_id', season.id).order('created_at', { ascending: false });
+  box.innerHTML = '';
+  if (error) { box.textContent = error.message; return; }
+  if (!data.length) { box.innerHTML = '<p class="hint">No lists yet.</p>'; return; }
+  const table = document.createElement('table');
+  table.className = 'lists';
+  table.innerHTML = '<tr><th>List</th><th>By</th><th>Seen by</th><th>Genotypes</th><th></th></tr>';
+  for (const l of data) {
+    const tr = table.insertRow();
+    if (l.archived_at) tr.className = 'archived';
+    const cell = (text) => { const td = tr.insertCell(); td.textContent = text; return td; };
+    cell(`${l.name}${l.archived_at ? ' (archived)' : ''}`);
+    cell(l.researchers?.name ?? '');
+    cell(l.visibility === 'everyone' ? 'Everyone' : 'Just them');
+    cell(String(l.highlight_list_items?.[0]?.count ?? ''));
+    const td = tr.insertCell();
+    if (l.created_by === me.id || me.is_admin) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'quiet';
+      b.textContent = l.archived_at ? 'Restore' : 'Archive';
+      b.addEventListener('click', async () => {
+        b.disabled = true;
+        const { error: err } = await supabase.rpc('archive_highlight_list', { p_list_id: l.id, p_archive: !l.archived_at });
+        if (err) { b.disabled = false; return show($('hlMsg'), err.message, 'err'); }
+        await showLists(me);
+      });
+      td.append(b);
+    }
+  }
+  box.append(table);
+}
+
+$('version').textContent =`Page version ${document.querySelector('meta[name=build]')?.content ?? 'dev'}`;
 await start();
