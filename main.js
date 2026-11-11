@@ -351,11 +351,8 @@ async function showMembers() {
   table.innerHTML = '<tr><th>Name</th><th>Role</th><th>Email</th><th>Trials</th><th>Last sign-in</th><th></th></tr>';
   for (const m of data) {
     const tr = table.insertRow();
-    const nameIn = document.createElement('input');
-    nameIn.type = 'text';
-    nameIn.value = m.name;
-    nameIn.style.minWidth = '8em';
-    tr.insertCell().append(nameIn);
+    // Names are set at invite and not edited here (they are the Researcher column in exports).
+    tr.insertCell().textContent = m.name;
     // Admins are changed only in Supabase: their role shows as text here.
     // Everyone else can be switched between student and crew.
     const roleSel = document.createElement('select');
@@ -384,14 +381,19 @@ async function showMembers() {
         b.disabled = false;
       });
       td.append(b, ' ');
+      return b;
     };
-    btn('Save', false, async () => {
-      const newRole = m.role === 'admin' ? 'admin' : roleSel.value;
-      const { error: err } = await supabase.rpc('set_lab_member', { p_researcher_id: m.researcher_id, p_name: nameIn.value, p_role: newRole });
-      if (err) throw new Error(err.message);
-      show($('memberMsg'), `Saved ${nameIn.value.trim()} (${newRole}). They see the change next time the app or page loads.`, 'ok');
-      await showMembers();
-    });
+    // Save appears only once the role has been changed (not for admins, whose role is set in Supabase).
+    if (m.role !== 'admin') {
+      const save = btn('Save', false, async () => {
+        const { error: err } = await supabase.rpc('set_lab_member_role', { p_researcher_id: m.researcher_id, p_role: roleSel.value });
+        if (err) throw new Error(err.message);
+        show($('memberMsg'), `${m.name} is now ${roleSel.value}. They see the change next time the app or page loads.`, 'ok');
+        await showMembers();
+      });
+      save.hidden = true;
+      roleSel.addEventListener('change', () => { save.hidden = roleSel.value === m.role; });
+    }
     if (m.role === 'crew') {
       btn('Set password', true, async () => {
         const pw = prompt(`New password for ${m.name} (at least 8 characters):`);
