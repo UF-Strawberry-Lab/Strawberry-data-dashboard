@@ -116,6 +116,8 @@ async function start() {
     void showLists(meInfo);
   }
   if (meInfo?.isAdmin) {
+    $('membersCard').hidden = false;
+    void showMembers();
     $('reviewCard').hidden = false;
     void showReview();
     void showMapChanges();
@@ -248,6 +250,142 @@ async function doExport(saveAs) {
 // ---------------- review student selections (admins) ----------------
 // A student's Select = YES waits here (observations.needs_review). Approve
 // keeps it; Reject deletes it, and phones drop it on their next sync.
+
+// ---------------- lab members (admins) ----------------
+// Listing and name/role changes: database functions list_lab_members() and
+// set_lab_member(). Creating accounts, links and crew passwords: the Edge
+// Function "lab-members", which holds the secret key on Supabase's servers
+// and checks the caller is an admin.
+
+/** Call the lab-members Edge Function; returns its reply or throws its error message. */
+async function labMembers(body) {
+  const { data, error } = await supabase.functions.invoke('lab-members', { body });
+  if (error) {
+    let msg = error.message;
+    try { msg = (await error.context.json()).error ?? msg; } catch { /* keep the generic message */ }
+    throw new Error(msg);
+  }
+  return data;
+}
+
+function showLink(link) {
+  $('linkBox').hidden = !link;
+  $('linkText').value = link ?? '';
+}
+$('copyLink').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText($('linkText').value); $('copyLink').textContent = 'Copied'; }
+  catch { $('linkText').select(); }
+  setTimeout(() => { $('copyLink').textContent = 'Copy link'; }, 2000);
+});
+
+$('addRole').addEventListener('change', () => { $('crewPwBox').hidden = $('addRole').value !== 'crew'; });
+
+$('addForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const role = $('addRole').value;
+  const password = role === 'crew' ? $('addPw').value : '';
+  if (role === 'crew' && password.length < 8) return show($('memberMsg'), 'Give the crew phone a password of at least 8 characters.', 'err');
+  $('addBtn').disabled = true;
+  showLink(null);
+  const who = $('addName').value.trim();
+  const email = $('addEmail').value.trim();
+  try {
+    const r = await labMembers({ action: 'invite', email, name: who, role, password });
+    if (r.link) { show($('memberMsg'), `Account made for ${who} (${role}). Send them this link to choose a password:`, 'ok'); showLink(r.link); }
+    else if (r.sent) show($('memberMsg'), `Account made for ${who} (${role}). Supabase emailed them a sign-up link.`, 'ok');
+    else show($('memberMsg'), `Crew account ready: sign in on the phone with ${email} and the password you set. Now give it trials below.`, 'ok');
+    $('addForm').reset();
+    $('crewPwBox').hidden = true;
+    await showMembers();
+  } catch (err) {
+    show($('memberMsg'), err.message, 'err');
+  } finally {
+    $('addBtn').disabled = false;
+  }
+});
+
+async function showMembers() {
+  const box = $('memberList');
+  const { data, error } = await supabase.rpc('list_lab_members');
+  box.innerHTML = '';
+  if (error) { box.textContent = error.message; return; }
+  const table = document.createElement('table');
+  table.className = 'lists';
+  table.innerHTML = '<tr><th>Name</th><th>Role</th><th>Email</th><th>Trials</th><th>Last sign-in</th><th></th></tr>';
+  for (const m of data) {
+    const tr = table.insertRow();
+    const nameIn = document.createElement('input');
+    nameIn.type = 'text';
+    nameIn.value = m.name;
+    nameIn.style.minWidth = '8em';
+    tr.insertCell().append(nameIn);
+    const roleSel = document.createElement('select');
+    for (const r of ['admin', 'student', 'crew']) roleSel.add(new Option(r, r, false, r === m.role));
+    tr.insertCell().append(roleSel);
+    const cell = (text) => { const td = tr.insertCell(); td.textContent = text; return td; };
+    cell(m.email ?? '');
+    cell(m.role === 'crew' ? (m.trials ?? 'none') : 'all');
+    cell(m.last_sign_in ? md(m.last_sign_in.slice(0, 10)) : 'never');
+    const td = tr.insertCell();
+    td.style.whiteSpace = 'nowrap';
+    const btn = (label, quiet, onClick) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      if (quiet) b.className = 'quiet';
+      b.addEventListener('click', async () => {
+        b.disabled = true;
+        try { await onClick(); } catch (err) { show($('memberMsg'), err.message, 'err'); }
+        b.disabled = false;
+      });
+      td.append(b, ' ');
+    };
+    btn('Save', false, async () => {
+      const { error: err } = await supabase.rpc('set_lab_member', { p_researcher_id: m.researcher_id, p_name: nameIn.value, p_role: roleSel.value });
+      if (err) throw new Error(err.message);
+      show($('memberMsg'), `Saved ${nameIn.value.trim()} (${roleSel.value}). They see the change next time the app or page loads.`, 'ok');
+      await showMembers();
+    });
+    if (m.role === 'crew') {
+      btn('Set password', true, async () => {
+        const pw = prompt(`New password for ${m.name} (at least 8 characters):`);
+        if (!pw) return;
+        await labMembers({ action: 'set_password', researcher_id: m.researcher_id, password: pw });
+        show($('memberMsg'), `Password changed for ${m.name}. Sign the phone in again with it.`, 'ok');
+      });
+    } else if (m.email) {
+      btn('Reset link', true, async () => {
+        const r = await labMembers({ action: 'reset', email: m.email });
+        if (r.link) { show($('memberMsg'), `Password reset link for ${m.name}:`, 'ok'); showLink(r.link); }
+        else show($('memberMsg'), `Supabase emailed ${m.name} a reset link.`, 'ok');
+      });
+    }
+  }
+  box.append(table);
+
+  // Crew trial assignment: crew accounts and this season's trials.
+  const who = $('assignWho');
+  who.innerHTML = '';
+  for (const m of data.filter((x) => x.role === 'crew')) who.add(new Option(m.name, m.email ?? m.name));
+  if (!who.options.length) who.add(new Option('(no crew accounts yet)', ''));
+  const { data: trials } = await supabase.from('trials').select('name, seasons!inner(is_current)').eq('seasons.is_current', true).order('name');
+  const tsel = $('assignTrial');
+  tsel.innerHTML = '';
+  for (const t of trials ?? []) tsel.add(new Option(t.name, t.name));
+}
+
+async function assign(give) {
+  if (!$('assignWho').value) return show($('memberMsg'), 'Make a crew account first.', 'err');
+  const { data, error } = await supabase.rpc('assign_trial', {
+    p_researcher: $('assignWho').value, p_trial: $('assignTrial').value,
+    p_assign: give, p_sampling_only: $('assignSampling').checked,
+  });
+  if (error) return show($('memberMsg'), error.message, 'err');
+  show($('memberMsg'), `${data}. The phone sees it after "Refresh trial list".`, 'ok');
+  await showMembers();
+}
+$('assignBtn').addEventListener('click', () => void assign(true));
+$('unassignBtn').addEventListener('click', () => void assign(false));
 
 $('reviewRefresh').addEventListener('click', () => { void showReview(); void showMapChanges(); });
 

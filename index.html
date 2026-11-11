@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Strawberry Export</title>
   <meta name="robots" content="noindex">
-  <meta name="build" content="2026-11-11 17:16 UTC">
+  <meta name="build" content="2026-11-11 17:36 UTC">
   <style>
     :root {
       --bg: #FAFAF7; --card: #FFFFFF; --text: #1F2421; --muted: #6B716D; --border: #D9DCD6;
@@ -130,6 +130,54 @@
       <div class="msg" id="reviewMsg" hidden></div>
     </section>
 
+    <!-- Admins: lab members (accounts, roles, crew trials). Account actions go
+         through the Edge Function "lab-members"; the secret key stays on Supabase. -->
+    <section class="card" id="membersCard" hidden>
+      <h2>Lab members</h2>
+      <form id="addForm">
+        <h3 class="sub3" style="margin-top:0">Add someone</h3>
+        <label class="field" for="addEmail">Email</label>
+        <input id="addEmail" type="email" required autocomplete="off">
+        <label class="field" for="addName">Name (the Researcher column in exports)</label>
+        <input id="addName" type="text" required autocomplete="off">
+        <label class="field" for="addRole">Role</label>
+        <select id="addRole">
+          <option value="student">Student: all trials, exports student data, selections reviewed</option>
+          <option value="admin">Admin: everything, reviews, manages members</option>
+          <option value="crew">Crew: shared lab phone, assigned trials only</option>
+        </select>
+        <div id="crewPwBox" hidden>
+          <label class="field" for="addPw">Password for the phone (at least 8 characters)</label>
+          <input id="addPw" type="text" autocomplete="off" minlength="8">
+          <p class="hint">Crew phones get a password now instead of a link. The email is only a login name.</p>
+        </div>
+        <div class="row"><button id="addBtn" type="submit">Create account</button></div>
+      </form>
+      <div class="msg" id="memberMsg" hidden></div>
+      <div id="linkBox" hidden>
+        <input id="linkText" type="text" readonly>
+        <div class="row"><button id="copyLink" type="button">Copy link</button></div>
+        <p class="hint">Send it only to that person (email, Teams): it signs in whoever opens it first.
+          It works once and expires (Supabase -> Authentication -> Email -> Email OTP Expiration). Make a new one if needed.</p>
+      </div>
+
+      <h3 class="sub3">Members</h3>
+      <div id="memberList"></div>
+
+      <h3 class="sub3">Crew trials</h3>
+      <p class="hint" style="margin-top:0">Crew accounts open only the trials given here. Admins and students open every trial.
+        "Sampling only": the phone shows just the Sampling group in that trial.</p>
+      <div class="row" style="margin-top:6px">
+        <select id="assignWho" style="width:auto"></select>
+        <select id="assignTrial" style="width:auto"></select>
+        <label class="radio"><input type="checkbox" id="assignSampling"> Sampling only</label>
+      </div>
+      <div class="row">
+        <button id="assignBtn" type="button">Give trial</button>
+        <button id="unassignBtn" type="button" class="quiet">Remove trial</button>
+      </div>
+    </section>
+
     <!-- Highlight lists: genotypes to find in the field (colored bars in the app). -->
     <section class="card" id="hlCard" hidden>
       <h2>Highlight lists</h2>
@@ -157,6 +205,6 @@
   </section>
   <p class="hint" id="version"></p>
 </main>
-<script type="module" src="./main.js?v=1794417390011"></script>
+<script type="module" src="./main.js?v=1794418568787"></script>
 </body>
 </html>
