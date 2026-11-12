@@ -165,6 +165,7 @@ async function start() {
   if (meInfo && season && role !== 'crew') {
     $('hlCard').hidden = false;
     void showLists(meInfo);
+    void loadHlOptions();
   }
   if (meInfo?.isAdmin) {
     $('membersCard').hidden = false;
@@ -586,11 +587,91 @@ async function showMapChanges() {
 }
 
 // ---------------- highlight lists ----------------
-// Upload: the CSV is checked here first (lib/highlights.js, the same rules
-// the tests cover), then upload_highlight_list() checks genotype and trial
-// names and saves the whole list, or nothing.
+// Upload: where the list applies is chosen on the page (All trials, or some
+// trials and, for trials with reps, some reps); the CSV is genotype, color.
+// The CSV is checked here first (lib/highlights.js, the same rules the tests
+// cover), then upload_highlight_list() checks genotypes, trials and reps and
+// saves the whole list, or nothing.
 
 let meRow = null;
+let hlOptions = [];   // this season's trials with plots: [{ trial, reps: ['1', '2'] }]
+const natural = (a, b) => a.localeCompare(b, undefined, { numeric: true });
+
+async function loadHlOptions() {
+  const { data, error } = await supabase.rpc('highlight_trial_reps');
+  hlOptions = error ? [] : data.map((t) => ({ trial: t.trial, reps: [...(t.reps ?? [])].sort(natural) }));
+  const box = $('hlTrials');
+  box.innerHTML = '';
+  for (const o of hlOptions) {
+    const label = document.createElement('label');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.dataset.trial = o.trial;
+    label.append(cb, ` ${o.trial}`);
+    box.append(label);
+  }
+  showHlWhere();
+}
+
+const chosenTrials = () => ($('hlAll').checked ? [] : [...$('hlTrials').querySelectorAll('input:checked')].map((i) => i.dataset.trial));
+
+/** Trial list when "All trials" is off; then each chosen trial with 2+ reps gets rep boxes (all ticked to start). */
+function showHlWhere() {
+  $('hlTrials').hidden = $('hlAll').checked;
+  const box = $('hlReps');
+  const off = new Set([...box.querySelectorAll('input:not(:checked)')].map((i) => `${i.dataset.trial}|${i.dataset.rep}`));
+  box.innerHTML = '';
+  const withReps = hlOptions.filter((o) => chosenTrials().includes(o.trial) && o.reps.length > 1);
+  for (const o of withReps) {
+    const row = document.createElement('div');
+    row.className = 'reps';
+    const name = document.createElement('strong');
+    name.textContent = `${o.trial} reps`;
+    row.append(name);
+    for (const rep of o.reps) {
+      const label = document.createElement('label');
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.dataset.trial = o.trial;
+      cb.dataset.rep = rep;
+      cb.checked = !off.has(`${o.trial}|${rep}`);
+      label.append(cb, ` ${rep}`);
+      row.append(label);
+    }
+    box.append(row);
+  }
+  box.hidden = !withReps.length;
+}
+$('hlAll').addEventListener('change', showHlWhere);
+$('hlTrials').addEventListener('change', showHlWhere);
+
+/** What to send as p_scope: [] = all trials; else [{ trial, reps? }]. */
+function hlScope() {
+  if ($('hlAll').checked) return { scope: [] };
+  const trials = chosenTrials();
+  if (!trials.length) return { error: 'Pick at least one trial, or tick All trials.' };
+  const scope = [];
+  for (const trial of trials) {
+    const boxes = [...$('hlReps').querySelectorAll('input')].filter((i) => i.dataset.trial === trial);
+    const reps = boxes.filter((i) => i.checked).map((i) => i.dataset.rep);
+    if (boxes.length && !reps.length) return { error: `Pick at least one rep for ${trial}.` };
+    scope.push(boxes.length && reps.length < boxes.length ? { trial, reps } : { trial });
+  }
+  return { scope };
+}
+
+/** "All trials" or "GSFlavor; Phyto rep 2" for the table of lists. */
+function whereText(rows) {
+  if (!rows?.length) return 'All trials';
+  const byTrial = new Map();
+  for (const r of rows) {
+    const name = r.trials?.name ?? '?';
+    if (!byTrial.has(name)) byTrial.set(name, []);
+    if (r.rep) byTrial.get(name).push(r.rep);
+  }
+  return [...byTrial].sort(([a], [b]) => natural(a, b))
+    .map(([t, reps]) => (reps.length ? `${t} rep${reps.length > 1 ? 's' : ''} ${reps.sort(natural).join(', ')}` : t)).join('; ');
+}
 
 $('hlColors').append(...Object.entries(HIGHLIGHT_COLORS).flatMap(([name, hex]) => {
   const sw = document.createElement('span');
@@ -600,7 +681,7 @@ $('hlColors').append(...Object.entries(HIGHLIGHT_COLORS).flatMap(([name, hex]) =
 }));
 
 $('hlTemplate').addEventListener('click', () => {
-  const csv = 'genotype,color,trial\r\n26.52-14,red,\r\n26.70-1,blue,MainStage1\r\n';
+  const csv = 'genotype,color\r\n26.52-14,red\r\n26.70-1,blue\r\n';
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
   a.download = 'highlight_list_template.csv';
@@ -616,13 +697,17 @@ $('hlForm').addEventListener('submit', async (e) => {
   const parsed = parseCsv(await file.text());
   const { rows, errors } = parseHighlightRows(parsed.headers, parsed.rows);
   if (errors.length) return show(msg, `Nothing was uploaded. Fix these and try again:\n${errors.slice(0, 40).join('\n')}`, 'err');
+  const where = hlScope();
+  if (where.error) return show(msg, where.error, 'err');
   $('hlUpload').disabled = true;
   show(msg, `Checking ${rows.length} genotypes…`, 'ok');
   const visibility = document.querySelector('input[name=hlVis]:checked').value;
-  const { error } = await supabase.rpc('upload_highlight_list', { p_name: $('hlName').value, p_visibility: visibility, p_items: rows });
+  const { error } = await supabase.rpc('upload_highlight_list',
+    { p_name: $('hlName').value, p_visibility: visibility, p_items: rows, p_scope: where.scope });
   $('hlUpload').disabled = false;
   if (error) return show(msg, error.message, 'err');
   $('hlForm').reset();
+  showHlWhere();
   show(msg, `Uploaded: ${rows.length} genotypes.`, 'ok');
   await showLists(meRow);
 });
@@ -632,19 +717,20 @@ async function showLists(me) {
   meRow = me;
   const box = $('hlLists');
   const { data, error } = await supabase.from('highlight_lists')
-    .select('id, name, visibility, created_at, archived_at, created_by, researchers(name), highlight_list_items(count)')
+    .select('id, name, visibility, created_at, archived_at, created_by, researchers(name), highlight_list_items(count), highlight_list_scope(rep, trials(name))')
     .eq('season_id', season.id).order('created_at', { ascending: false });
   box.innerHTML = '';
   if (error) { box.textContent = error.message; return; }
   if (!data.length) { box.innerHTML = '<p class="hint">No lists yet.</p>'; return; }
   const table = document.createElement('table');
   table.className = 'lists';
-  table.innerHTML = '<tr><th>List</th><th>By</th><th>Seen by</th><th>Genotypes</th><th></th></tr>';
+  table.innerHTML = '<tr><th>List</th><th>Where</th><th>By</th><th>Seen by</th><th>Genotypes</th><th></th></tr>';
   for (const l of data) {
     const tr = table.insertRow();
     if (l.archived_at) tr.className = 'archived';
     const cell = (text) => { const td = tr.insertCell(); td.textContent = text; return td; };
     cell(`${l.name}${l.archived_at ? ' (archived)' : ''}`);
+    cell(whereText(l.highlight_list_scope));
     cell(l.researchers?.name ?? '');
     cell(l.visibility === 'everyone' ? 'Everyone' : 'Just them');
     cell(String(l.highlight_list_items?.[0]?.count ?? ''));

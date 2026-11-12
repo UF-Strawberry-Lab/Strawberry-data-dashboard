@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>UF Strawberry Dashboard</title>
   <meta name="robots" content="noindex">
-  <meta name="build" content="2026-11-12 18:43 UTC">
+  <meta name="build" content="2026-11-12 20:54 UTC">
   <style>
     :root {
       --bg: #FAFAF7; --card: #FFFFFF; --text: #1F2421; --muted: #6B716D; --border: #D9DCD6;
@@ -34,6 +34,12 @@
     .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 16px; }
     .trials { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 6px 12px; }
     .trials label { display: flex; gap: 8px; align-items: center; padding: 4px 0; }
+    /* Highlight list "Where": trial checkboxes, then each chosen trial's reps. */
+    .pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 2px 12px; margin: 4px 0 8px 24px; }
+    .pick label { display: flex; gap: 8px; align-items: center; padding: 3px 0; }
+    .reps { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: center; margin: 2px 0 6px 24px; }
+    .reps strong { min-width: 8em; }
+    .reps label { display: flex; gap: 6px; align-items: center; }
     .trials label.all { grid-column: 1 / -1; font-weight: 600; border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 4px; }
     .msg { margin-top: 14px; padding: 10px 12px; border-radius: 8px; white-space: pre-wrap; }
     .msg.err { background: var(--accent-soft); color: var(--accent); }
@@ -230,10 +236,14 @@
       <form id="hlForm">
         <label class="field" for="hlName">List name</label>
         <input id="hlName" type="text" required placeholder="e.g. Tissue samples, week 3">
+        <label class="field">Where</label>
+        <label class="radio"><input type="checkbox" id="hlAll" checked> All trials</label>
+        <div id="hlTrials" class="pick" hidden></div>
+        <div id="hlReps" hidden></div>
         <label class="field" for="hlFile">CSV file</label>
         <input id="hlFile" type="file" accept=".csv,text/csv" required>
-        <p class="hint">Columns: <strong>genotype</strong>, <strong>color</strong>, and optionally <strong>trial</strong>
-          (highlight only in that trial). Colors:<span id="hlColors"></span></p>
+        <p class="hint">Columns: <strong>genotype</strong> and <strong>color</strong> only (trials and reps are chosen above).
+          Colors:<span id="hlColors"></span></p>
         <label class="field">Who sees it</label>
         <label class="radio"><input type="radio" name="hlVis" value="me" checked> Just me</label>
         <label class="radio"><input type="radio" name="hlVis" value="everyone"> Everyone (in the trials where those genotypes are)</label>
@@ -251,6 +261,6 @@
   </section>
   <p class="hint" id="version"></p>
 </main>
-<script type="module" src="./main.js?v=1794509010056"></script>
+<script type="module" src="./main.js?v=1794516856398"></script>
 </body>
 </html>
