@@ -13,7 +13,7 @@ import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './config.js';
 import { buildExport, TIME_ZONE } from './lib/format.js';
 import { weekDates, weekNumber } from './lib/selections.js';
 import { makeZip } from './zip.js';
-import { HIGHLIGHT_COLORS, parseHighlightRows } from './lib/highlights.js';
+import { HIGHLIGHT_COLORS, dedupeHighlightRows, parseHighlightRows } from './lib/highlights.js';
 import { parseCsv } from './lib/csv.js';
 
 // Opened from a sign-up or password-reset link? Read the address before the
@@ -597,68 +597,112 @@ let meRow = null;
 let hlOptions = [];   // this season's trials with plots: [{ trial, reps: ['1', '2'] }]
 const natural = (a, b) => a.localeCompare(b, undefined, { numeric: true });
 
+/**
+ * "Where": every trial is listed and ticked to start, with its reps (2+)
+ * below it, also ticked. Unticking anything unticks "All trials"; ticking
+ * everything again ticks it. A trial's box ticks/unticks all its reps; a rep
+ * box keeps its trial ticked while any of its reps is. (Mark, 2026-11-12)
+ */
 async function loadHlOptions() {
   const { data, error } = await supabase.rpc('highlight_trial_reps');
   hlOptions = error ? [] : data.map((t) => ({ trial: t.trial, reps: [...(t.reps ?? [])].sort(natural) }));
   const box = $('hlTrials');
   box.innerHTML = '';
-  for (const o of hlOptions) {
-    const label = document.createElement('label');
+  if (error) { box.textContent = error.message; return; }
+  if (!hlOptions.length) { box.innerHTML = '<p class="hint">No trials with plots yet.</p>'; return; }
+  const check = (attrs) => {
     const cb = document.createElement('input');
     cb.type = 'checkbox';
-    cb.dataset.trial = o.trial;
-    label.append(cb, ` ${o.trial}`);
-    box.append(label);
+    cb.checked = $('hlAll').checked;
+    Object.assign(cb.dataset, attrs);
+    return cb;
+  };
+  for (const o of hlOptions) {
+    const div = document.createElement('div');
+    div.className = 'trial';
+    const label = document.createElement('label');
+    label.append(check({ trial: o.trial }), o.trial);
+    div.append(label);
+    if (o.reps.length > 1) {
+      const reps = document.createElement('div');
+      reps.className = 'reps';
+      for (const rep of o.reps) {
+        const l = document.createElement('label');
+        l.append(check({ trial: o.trial, rep }), `Rep ${rep}`);
+        reps.append(l);
+      }
+      div.append(reps);
+    }
+    box.append(div);
   }
-  showHlWhere();
 }
 
-const chosenTrials = () => ($('hlAll').checked ? [] : [...$('hlTrials').querySelectorAll('input:checked')].map((i) => i.dataset.trial));
+const trialBox = (trial) => $('hlTrials').querySelector(`input[data-trial="${CSS.escape(trial)}"]:not([data-rep])`);
+const repBoxes = (trial) => [...$('hlTrials').querySelectorAll(`input[data-trial="${CSS.escape(trial)}"][data-rep]`)];
 
-/** Trial list when "All trials" is off; then each chosen trial with 2+ reps gets rep boxes (all ticked to start). */
-function showHlWhere() {
-  $('hlTrials').hidden = $('hlAll').checked;
-  const box = $('hlReps');
-  const off = new Set([...box.querySelectorAll('input:not(:checked)')].map((i) => `${i.dataset.trial}|${i.dataset.rep}`));
+$('hlAll').addEventListener('change', () => {
+  for (const cb of $('hlTrials').querySelectorAll('input')) cb.checked = $('hlAll').checked;
+});
+$('hlTrials').addEventListener('change', (e) => {
+  const cb = e.target;
+  if (!(cb instanceof HTMLInputElement)) return;
+  if (cb.dataset.rep === undefined) for (const r of repBoxes(cb.dataset.trial)) r.checked = cb.checked;
+  else trialBox(cb.dataset.trial).checked = repBoxes(cb.dataset.trial).some((r) => r.checked);
+  $('hlAll').checked = [...$('hlTrials').querySelectorAll('input')].every((i) => i.checked);
+});
+
+/** What to send as p_scope: [] = all trials (also later ones); else [{ trial, reps? }]. */
+function hlScope() {
+  if ($('hlAll').checked) return { scope: [] };
+  const scope = [];
+  for (const o of hlOptions) {
+    if (!trialBox(o.trial)?.checked) continue;
+    const boxes = repBoxes(o.trial);
+    const reps = boxes.filter((i) => i.checked).map((i) => i.dataset.rep);
+    scope.push(boxes.length && reps.length < boxes.length ? { trial: o.trial, reps } : { trial: o.trial });
+  }
+  if (!scope.length) return { error: 'Tick at least one trial (or All trials).' };
+  return { scope };
+}
+
+/**
+ * Genotypes listed with different colors: one row each with a radio per
+ * color; the pick goes into hlChosen and the next Upload uses it.
+ */
+let hlChosen = {};   // lowercase genotype -> color
+function showConflicts(conflicts) {
+  const box = $('hlConflicts');
   box.innerHTML = '';
-  const withReps = hlOptions.filter((o) => chosenTrials().includes(o.trial) && o.reps.length > 1);
-  for (const o of withReps) {
+  box.hidden = !conflicts.length;
+  if (!conflicts.length) return;
+  const p = document.createElement('p');
+  p.innerHTML = '<strong>Listed more than once with different colors.</strong> Pick one color for each, then press Upload list again.';
+  box.append(p);
+  for (const c of conflicts) {
+    const k = c.genotype.trim().toLowerCase();
     const row = document.createElement('div');
-    row.className = 'reps';
+    row.className = 'clash';
     const name = document.createElement('strong');
-    name.textContent = `${o.trial} reps`;
+    name.textContent = c.genotype;
     row.append(name);
-    for (const rep of o.reps) {
-      const label = document.createElement('label');
-      const cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.dataset.trial = o.trial;
-      cb.dataset.rep = rep;
-      cb.checked = !off.has(`${o.trial}|${rep}`);
-      label.append(cb, ` ${rep}`);
-      row.append(label);
+    for (const color of c.colors) {
+      const l = document.createElement('label');
+      const rb = document.createElement('input');
+      rb.type = 'radio';
+      rb.name = `clash-${k}`;
+      rb.checked = hlChosen[k] === color;
+      rb.addEventListener('change', () => { hlChosen[k] = color; });
+      const sw = document.createElement('span');
+      sw.className = 'sw';
+      sw.style.background = HIGHLIGHT_COLORS[color];
+      l.append(rb, sw, color);
+      row.append(l);
     }
     box.append(row);
   }
-  box.hidden = !withReps.length;
 }
-$('hlAll').addEventListener('change', showHlWhere);
-$('hlTrials').addEventListener('change', showHlWhere);
-
-/** What to send as p_scope: [] = all trials; else [{ trial, reps? }]. */
-function hlScope() {
-  if ($('hlAll').checked) return { scope: [] };
-  const trials = chosenTrials();
-  if (!trials.length) return { error: 'Pick at least one trial, or tick All trials.' };
-  const scope = [];
-  for (const trial of trials) {
-    const boxes = [...$('hlReps').querySelectorAll('input')].filter((i) => i.dataset.trial === trial);
-    const reps = boxes.filter((i) => i.checked).map((i) => i.dataset.rep);
-    if (boxes.length && !reps.length) return { error: `Pick at least one rep for ${trial}.` };
-    scope.push(boxes.length && reps.length < boxes.length ? { trial, reps } : { trial });
-  }
-  return { scope };
-}
+// A new file starts over: earlier color picks were for the old one.
+$('hlFile').addEventListener('change', () => { hlChosen = {}; showConflicts([]); });
 
 /** "All trials" or "GSFlavor; Phyto rep 2" for the table of lists. */
 function whereText(rows) {
@@ -695,8 +739,14 @@ $('hlForm').addEventListener('submit', async (e) => {
   const file = $('hlFile').files[0];
   if (!file) return show(msg, 'Choose a CSV file.', 'err');
   const parsed = parseCsv(await file.text());
-  const { rows, errors } = parseHighlightRows(parsed.headers, parsed.rows);
-  if (errors.length) return show(msg, `Nothing was uploaded. Fix these and try again:\n${errors.slice(0, 40).join('\n')}`, 'err');
+  const parsedRows = parseHighlightRows(parsed.headers, parsed.rows);
+  if (parsedRows.errors.length) return show(msg, `Nothing was uploaded. Fix these and try again:\n${parsedRows.errors.slice(0, 40).join('\n')}`, 'err');
+  // Repeats: same color = kept once; different colors = ask (lib/highlights.js, tested).
+  const { rows, conflicts, dropped } = dedupeHighlightRows(parsedRows.rows, hlChosen);
+  showConflicts(conflicts);
+  if (conflicts.length) {
+    return show(msg, `${conflicts.length} genotype(s) are listed with different colors. Pick one color for each below, then press Upload list again.`, 'err');
+  }
   const where = hlScope();
   if (where.error) return show(msg, where.error, 'err');
   $('hlUpload').disabled = true;
@@ -707,8 +757,10 @@ $('hlForm').addEventListener('submit', async (e) => {
   $('hlUpload').disabled = false;
   if (error) return show(msg, error.message, 'err');
   $('hlForm').reset();
-  showHlWhere();
-  show(msg, `Uploaded: ${rows.length} genotypes.`, 'ok');
+  hlChosen = {};
+  showConflicts([]);
+  for (const cb of $('hlTrials').querySelectorAll('input')) cb.checked = true;   // form reset ticks All trials again
+  show(msg, `Uploaded: ${rows.length} genotypes${dropped ? ` (${dropped} repeated line${dropped > 1 ? 's' : ''} merged)` : ''}.`, 'ok');
   await showLists(meRow);
 });
 

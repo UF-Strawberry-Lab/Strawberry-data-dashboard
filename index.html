@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>UF Strawberry Dashboard</title>
   <meta name="robots" content="noindex">
-  <meta name="build" content="2026-11-12 20:54 UTC">
+  <meta name="build" content="2026-11-12 21:06 UTC">
   <style>
     :root {
       --bg: #FAFAF7; --card: #FFFFFF; --text: #1F2421; --muted: #6B716D; --border: #D9DCD6;
@@ -34,12 +34,19 @@
     .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 16px; }
     .trials { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 6px 12px; }
     .trials label { display: flex; gap: 8px; align-items: center; padding: 4px 0; }
-    /* Highlight list "Where": trial checkboxes, then each chosen trial's reps. */
-    .pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 2px 12px; margin: 4px 0 8px 24px; }
-    .pick label { display: flex; gap: 8px; align-items: center; padding: 3px 0; }
-    .reps { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: center; margin: 2px 0 6px 24px; }
-    .reps strong { min-width: 8em; }
-    .reps label { display: flex; gap: 6px; align-items: center; }
+    /* Highlight list "Where": every trial (ticked to start), its reps below it. */
+    .where { border: 1px solid var(--border); border-radius: 10px; padding: 10px 16px; font-size: 16px; margin-bottom: 8px; }
+    .where input[type=checkbox] { width: 20px; height: 20px; margin: 0; flex: none; }
+    .where label.all { display: flex; gap: 10px; align-items: center; font-weight: 700; padding: 4px 0 10px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+    .where .trial { padding: 8px 0; border-bottom: 1px solid var(--border); }
+    .where .trial:last-child { border-bottom: 0; }
+    .where .trial > label { display: flex; gap: 10px; align-items: center; font-weight: 600; }
+    .where .reps { display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center; margin: 8px 0 0 30px; }
+    .where .reps label { display: flex; gap: 8px; align-items: center; }
+    .conflicts { border: 1px solid var(--border); border-radius: 10px; padding: 10px 16px; margin-top: 12px; }
+    .conflicts .clash { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; padding: 6px 0; }
+    .conflicts .clash strong { min-width: 9em; }
+    .conflicts label { display: flex; gap: 6px; align-items: center; }
     .trials label.all { grid-column: 1 / -1; font-weight: 600; border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 4px; }
     .msg { margin-top: 14px; padding: 10px 12px; border-radius: 8px; white-space: pre-wrap; }
     .msg.err { background: var(--accent-soft); color: var(--accent); }
@@ -237,9 +244,10 @@
         <label class="field" for="hlName">List name</label>
         <input id="hlName" type="text" required placeholder="e.g. Tissue samples, week 3">
         <label class="field">Where</label>
-        <label class="radio"><input type="checkbox" id="hlAll" checked> All trials</label>
-        <div id="hlTrials" class="pick" hidden></div>
-        <div id="hlReps" hidden></div>
+        <div class="where">
+          <label class="all"><input type="checkbox" id="hlAll" checked> All trials <span class="hint">(also trials added later)</span></label>
+          <div id="hlTrials"><p class="hint">Loading trials…</p></div>
+        </div>
         <label class="field" for="hlFile">CSV file</label>
         <input id="hlFile" type="file" accept=".csv,text/csv" required>
         <p class="hint">Columns: <strong>genotype</strong> and <strong>color</strong> only (trials and reps are chosen above).
@@ -247,6 +255,8 @@
         <label class="field">Who sees it</label>
         <label class="radio"><input type="radio" name="hlVis" value="me" checked> Just me</label>
         <label class="radio"><input type="radio" name="hlVis" value="everyone"> Everyone (in the trials where those genotypes are)</label>
+        <!-- Genotypes listed with different colors: pick one each (main.js). -->
+        <div id="hlConflicts" class="conflicts" hidden></div>
         <div class="row">
           <button id="hlUpload" type="submit">Upload list</button>
           <button class="quiet" id="hlTemplate" type="button">Download a template</button>
@@ -261,6 +271,6 @@
   </section>
   <p class="hint" id="version"></p>
 </main>
-<script type="module" src="./main.js?v=1794516856398"></script>
+<script type="module" src="./main.js?v=1794517584356"></script>
 </body>
 </html>
