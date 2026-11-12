@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>UF Strawberry Dashboard</title>
   <meta name="robots" content="noindex">
-  <meta name="build" content="2026-11-11 18:59 UTC">
+  <meta name="build" content="2026-11-12 17:58 UTC">
   <style>
     :root {
       --bg: #FAFAF7; --card: #FFFFFF; --text: #1F2421; --muted: #6B716D; --border: #D9DCD6;
@@ -68,6 +68,15 @@
   <p class="sub">Field data, reviews and lab members</p>
 
   <!-- Sign in with the same email and password as the field app. -->
+  <!-- Opened from a sign-up or reset link: nothing happens until Continue is tapped,
+       so link previews and email scanners can't use the one-time link up. -->
+  <section class="card" id="setup" hidden>
+    <h2 id="setupTitle">Set up your account</h2>
+    <p id="setupText">Tap Continue to choose your password. You will use it here and in the field app.</p>
+    <div class="row"><button id="setupBtn" type="button">Continue</button></div>
+    <div class="msg err" id="setupMsg" hidden></div>
+  </section>
+
   <section class="card" id="login" hidden>
     <h2>Sign in</h2>
     <form id="loginForm">
@@ -185,8 +194,9 @@
       <div id="linkBox" hidden>
         <input id="linkText" type="text" readonly>
         <div class="row"><button id="copyLink" type="button">Copy link</button></div>
-        <p class="hint">Send it only to that person (email, Teams): it signs in whoever opens it first.
-          It works once and expires (Supabase -> Authentication -> Email -> Email OTP Expiration). Make a new one if needed.</p>
+        <p class="hint">Send it only to that person (email, Teams are fine). Opening it shows a Continue button;
+          the first person to tap Continue gets the account, so don't tap it yourself. It works once and expires
+          (Supabase -> Authentication -> Sign In / Providers -> Email -> Email OTP Expiration, at most 24 h). Make a new one if needed.</p>
       </div>
 
       <h3 class="sub3">Members</h3>
@@ -236,6 +246,6 @@
   </section>
   <p class="hint" id="version"></p>
 </main>
-<script type="module" src="./main.js?v=1794423558908"></script>
+<script type="module" src="./main.js?v=1794506294332"></script>
 </body>
 </html>

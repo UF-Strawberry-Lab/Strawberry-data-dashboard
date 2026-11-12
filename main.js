@@ -16,11 +16,17 @@ import { makeZip } from './zip.js';
 import { HIGHLIGHT_COLORS, parseHighlightRows } from './lib/highlights.js';
 import { parseCsv } from './lib/csv.js';
 
-// Opened from a sign-up or password-reset link (npm run invite / reset-link)?
-// The link signs them in; read its type before the Supabase client clears
-// the address, so the page can ask for a new password straight away.
+// Opened from a sign-up or password-reset link? Read the address before the
+// Supabase client clears it, so the page can ask for a password straight away.
+//  - Lab members links (#setup_token=...&setup_type=invite|recovery): the page
+//    shows "Continue" and uses the one-time token only when it's tapped, so
+//    Teams/Outlook link previews and scanners can't use it up first.
+//  - Older links straight from Supabase (#access_token=...&type=invite, e.g.
+//    npm run invite): already signed in by the time the page opens.
 const linkParams = new URLSearchParams(location.hash.slice(1));
-const arrivedFrom = linkParams.get('type');                 // 'invite' | 'recovery' | null
+const setupToken = linkParams.get('setup_token');
+const setupType = linkParams.get('setup_type') === 'recovery' ? 'recovery' : 'invite';
+let arrivedFrom = linkParams.get('type');                   // 'invite' | 'recovery' | null
 const linkError = linkParams.get('error_description');     // e.g. the link expired
 const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 const $ = (id) => document.getElementById(id);
@@ -57,6 +63,35 @@ $('loginForm').addEventListener('submit', async (e) => {
 $('logoutBtn').addEventListener('click', async () => {
   await supabase.auth.signOut();
   location.reload();
+});
+
+// ---------------- set up from a link ----------------
+
+function showSetup() {
+  $('setup').hidden = false;
+  $('login').hidden = true;
+  $('app').hidden = true;
+  if (setupType === 'recovery') {
+    $('setupTitle').textContent = 'Choose a new password';
+    $('setupText').textContent = 'Tap Continue to choose a new password. It works here and in the field app.';
+  }
+}
+
+$('setupBtn').addEventListener('click', async () => {
+  $('setupBtn').disabled = true;
+  show($('setupMsg'), null);
+  // Signs in as the person the link was made for (and uses the link up).
+  const { error } = await supabase.auth.verifyOtp({ token_hash: setupToken, type: setupType });
+  history.replaceState(null, '', location.pathname);   // the link works once: don't keep it in the address
+  if (error) {
+    $('setupBtn').hidden = true;
+    show($('setupMsg'), 'This link has already been used or has expired. Ask a lab admin for a new one (Lab members → Reset link).', 'err');
+    $('login').hidden = false;
+    return;
+  }
+  $('setup').hidden = true;
+  arrivedFrom = setupType;   // start() then asks for the password
+  await start();
 });
 
 // ---------------- change password ----------------
@@ -616,4 +651,5 @@ async function showLists(me) {
 }
 
 $('version').textContent =`Page version ${document.querySelector('meta[name=build]')?.content ?? 'dev'}`;
-await start();
+if (setupToken) showSetup();
+else await start();
