@@ -113,7 +113,14 @@ $('pwForm').addEventListener('submit', async (e) => {
   if (error) return show($('pwMsg'), error.message, 'err');
   $('pwForm').reset();
   show($('pwMsg'), 'Password changed. Use it next time you sign in here or in the field app.', 'ok');
+  if ($('app').classList.contains('password-only')) {
+    // From a link: the form's job is done; hide it and offer the dashboard.
+    for (const id of ['pw1', 'pw2', 'pwSave']) $(id).disabled = true;
+    $('pwDoneRow').hidden = false;
+  }
 });
+// Reload into the normal dashboard (the link is already gone from the address).
+$('pwDone').addEventListener('click', () => location.reload());
 
 // ---------------- after sign in ----------------
 
@@ -128,11 +135,20 @@ async function start() {
     return;
   }
   if (arrivedFrom === 'invite' || arrivedFrom === 'recovery') {
+    // Opened from a sign-up or reset link: just the password form, nothing
+    // else of the dashboard, until the password is saved and they choose
+    // "Go to the dashboard" (Mark, 2026-11-12).
+    $('app').classList.add('password-only');
     $('pwForm').hidden = false;
     show($('pwMsg'), arrivedFrom === 'invite'
       ? 'Welcome! Choose a password. You will use it here and in the field app.'
       : 'Choose a new password. It works here and in the field app.', 'ok');
     history.replaceState(null, '', location.pathname);   // a reload shouldn't show this again
+    const { data: me } = await supabase.from('researchers').select('name').eq('auth_user_id', session.user.id).maybeSingle();
+    $('whoName').textContent = me?.name ?? session.user.email;
+    $('whoSeason').textContent = '';
+    $('pw1').focus();
+    return;
   }
 
   const [me, seasonRes] = await Promise.all([

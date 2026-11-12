@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>UF Strawberry Dashboard</title>
   <meta name="robots" content="noindex">
-  <meta name="build" content="2026-11-12 17:58 UTC">
+  <meta name="build" content="2026-11-12 18:43 UTC">
   <style>
     :root {
       --bg: #FAFAF7; --card: #FFFFFF; --text: #1F2421; --muted: #6B716D; --border: #D9DCD6;
@@ -60,6 +60,9 @@
     table.lists select { width: auto; min-width: 7.5em; padding: 6px 8px; }
     .scroll { overflow-x: auto; }
     [hidden] { display: none !important; }
+    /* Arrived from a sign-up / reset link: only the password form (and who is signed in). */
+    #app.password-only > :not(.who):not(#pwForm) { display: none !important; }
+    #app.password-only #pwBtn, #app.password-only #pwCancel { display: none !important; }
   </style>
 </head>
 <body>
@@ -112,6 +115,8 @@
         <button class="quiet" id="pwCancel" type="button">Cancel</button>
       </div>
       <div class="msg" id="pwMsg" hidden></div>
+      <!-- Opened from a sign-up / reset link: only shown once the password is saved. -->
+      <div class="row" id="pwDoneRow" hidden><button id="pwDone" type="button">Go to the dashboard</button></div>
     </form>
 
     <!-- Tabs: each person sees only the tabs their role allows (main.js). -->
@@ -246,6 +251,6 @@
   </section>
   <p class="hint" id="version"></p>
 </main>
-<script type="module" src="./main.js?v=1794506294332"></script>
+<script type="module" src="./main.js?v=1794509010056"></script>
 </body>
 </html>
