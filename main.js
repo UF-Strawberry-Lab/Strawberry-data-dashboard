@@ -9,12 +9,12 @@
 // build.ts), so the two always match.
 
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/+esm';
-import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './config.js?v=1794517828971';
-import { buildExport, TIME_ZONE } from './lib/format.js?v=1794517828971';
-import { weekDates, weekNumber } from './lib/selections.js?v=1794517828971';
-import { makeZip } from './zip.js?v=1794517828971';
-import { HIGHLIGHT_COLORS, dedupeHighlightRows, parseHighlightRows } from './lib/highlights.js?v=1794517828971';
-import { parseCsv } from './lib/csv.js?v=1794517828971';
+import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './config.js?v=1794548278199';
+import { buildExport, TIME_ZONE } from './lib/format.js?v=1794548278199';
+import { weekDates, weekNumber } from './lib/selections.js?v=1794548278199';
+import { makeZip } from './zip.js?v=1794548278199';
+import { HIGHLIGHT_COLORS, dedupeHighlightRows, parseHighlightRows } from './lib/highlights.js?v=1794548278199';
+import { parseCsv } from './lib/csv.js?v=1794548278199';
 
 // Opened from a sign-up or password-reset link? Read the address before the
 // Supabase client clears it, so the page can ask for a password straight away.
@@ -166,6 +166,9 @@ async function start() {
     $('hlCard').hidden = false;
     void showLists(meInfo);
     void loadHlOptions();
+    traitsMe = meInfo;
+    $('trPendingHint').hidden = meInfo.isAdmin;
+    void loadTraits();
   }
   if (meInfo?.isAdmin) {
     $('membersCard').hidden = false;
@@ -307,8 +310,8 @@ async function doExport(saveAs) {
 // One panel per tab (data-panel in index.html). The address keeps the tab
 // (#review), so a reload or a bookmark opens the same one.
 const TABS_BY_ROLE = {
-  admin: ['export', 'review', 'members', 'highlights'],
-  student: ['export', 'highlights'],
+  admin: ['export', 'review', 'members', 'highlights', 'traits'],
+  student: ['export', 'highlights', 'traits'],
   crew: [],
 };
 
@@ -330,14 +333,14 @@ function showTab(name) {
 }
 
 // Review tab: both lists, and the number waiting shown on the tab.
-const waiting = { selections: 0, edits: 0 };
+const waiting = { selections: 0, edits: 0, traits: 0 };
 function showWaiting() {
-  const n = waiting.selections + waiting.edits;
+  const n = waiting.selections + waiting.edits + waiting.traits;
   $('reviewCount').hidden = n === 0;
   $('reviewCount').textContent = String(n);
 }
 async function refreshReview() {
-  await Promise.all([showReview(), showMapChanges()]);
+  await Promise.all([showReview(), showMapChanges(), loadTraits()]);
 }
 
 // ---------------- lab members (admins) ----------------
@@ -800,6 +803,214 @@ async function showLists(me) {
       });
       td.append(b);
     }
+  }
+  box.append(table);
+}
+
+// ---------------- traits ----------------
+// Browse every group and trait; admins and students add simple traits (a
+// whole-number score or yes/no) with create_trait(), which checks names,
+// scales and trials (supabase/migrations/20261113000001_traits_dashboard.sql).
+// A student's trait waits on Review changes until an admin approves it.
+// "Where" (trait_trials) and "Who" (trait_researchers): empty = no limit.
+
+let traitsMe = null;
+let tr = { traits: [], groups: [], trials: [], people: [], groupTrials: new Map() };
+const normName = (n) => (n ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const UNIT = { berry: 'Berry', plant: 'Plant', plot: 'Plot' };
+
+function kindText(t) {
+  if (t.value_type === 'yes_no') return 'Yes / No';
+  if (t.value_type === 'sequence') return `Numbered: ${t.value_label ?? ''}1, ${t.value_label ?? ''}2, …`;
+  return `Score ${Number(t.scale_min)}–${Number(t.scale_max)}`;
+}
+const trialName = (id) => tr.trials.find((x) => x.id === id)?.name;
+function traitWhere(t) {
+  const own = (t.trait_trials ?? []).map((x) => trialName(x.trial_id)).filter(Boolean);
+  if ((t.trait_trials ?? []).length) return own.length ? own.sort(natural).join(', ') : '(other seasons)';
+  const g = tr.groups.find((x) => x.id === t.trait_group_id);
+  if (g?.always_on) return 'Every trial';
+  const names = (tr.groupTrials.get(t.trait_group_id) ?? []).map(trialName).filter(Boolean);
+  return names.length ? names.sort(natural).join(', ') : '(no trials use this group yet)';
+}
+function traitWho(t) {
+  const ids = (t.trait_researchers ?? []).map((x) => x.researcher_id);
+  return ids.length ? ids.map((id) => tr.people.find((p) => p.id === id)?.name ?? '?').join(', ') : 'Everyone';
+}
+
+async function loadTraits() {
+  if (!traitsMe || !season) return;
+  const [traits, groups, trials, people, ttg] = await Promise.all([
+    supabase.from('traits').select('id, name, display_name, description, value_type, scale_min, scale_max, scoring_unit, active, status, value_label, trait_group_id, created_by, creator:researchers!traits_created_by_fkey(name), trait_trials(trial_id), trait_researchers(researcher_id)'),
+    supabase.from('trait_groups').select('id, name, sort_order, always_on').order('sort_order'),
+    supabase.from('trials').select('id, name, seasons!inner(is_current)').eq('seasons.is_current', true).order('name'),
+    supabase.from('researchers').select('id, name, role').order('name'),
+    supabase.from('trial_trait_groups').select('trait_group_id, trial_id'),
+  ]);
+  const err = traits.error ?? groups.error ?? trials.error ?? people.error ?? ttg.error;
+  if (err) { $('traitList').textContent = err.message; return; }
+  tr = { traits: traits.data, groups: groups.data, trials: trials.data, people: people.data.filter((p) => p.role !== 'crew'), groupTrials: new Map() };
+  const current = new Set(tr.trials.map((t) => t.id));
+  for (const x of ttg.data) {
+    if (!current.has(x.trial_id)) continue;
+    if (!tr.groupTrials.has(x.trait_group_id)) tr.groupTrials.set(x.trait_group_id, []);
+    tr.groupTrials.get(x.trait_group_id).push(x.trial_id);
+  }
+  showTraitList();
+  fillTraitForm();
+  if (traitsMe.isAdmin) showTraitReview();
+}
+
+function showTraitList() {
+  const box = $('traitList');
+  box.innerHTML = '';
+  const table = document.createElement('table');
+  table.className = 'lists';
+  table.innerHTML = '<tr><th>Trait</th><th>Kind</th><th>Per</th><th>Where</th><th>Who</th><th></th></tr>';
+  for (const g of tr.groups) {
+    const list = tr.traits.filter((t) => t.trait_group_id === g.id && t.status !== 'rejected')
+      .sort((a, b) => a.name.localeCompare(b.name));
+    if (!list.length) continue;
+    const head = table.insertRow();
+    const th = document.createElement('th');
+    th.colSpan = 6;
+    th.textContent = g.name + (g.always_on ? ' (always on)' : '');
+    th.style.paddingTop = '14px';
+    head.append(th);
+    for (const t of list) {
+      const row = table.insertRow();
+      if (!t.active || t.status === 'pending') row.className = 'archived';
+      const cell = (text, title) => { const td = row.insertCell(); td.textContent = text; if (title) td.title = title; return td; };
+      cell(`${t.display_name}${t.display_name !== t.name ? ` (${t.name})` : ''}`, t.description ?? '');
+      cell(kindText(t));
+      cell(UNIT[t.scoring_unit] ?? t.scoring_unit);
+      cell(traitWhere(t));
+      cell(traitWho(t));
+      cell(t.status === 'pending' ? `Waiting for an admin${t.creator?.name ? ` (by ${t.creator.name})` : ''}`
+        : !t.active ? 'Retired' : t.creator?.name ? `by ${t.creator.name}` : '');
+    }
+  }
+  const wrap = document.createElement('div');
+  wrap.className = 'scroll';
+  wrap.append(table);
+  box.append(wrap);
+}
+
+/** A tick list with an "all" box: ticking a single item unticks "all", and the other way round. */
+function tickList(box, allBox, items) {
+  box.innerHTML = '';
+  for (const it of items) {
+    const l = document.createElement('label');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = it.id;
+    l.append(cb, ` ${it.name}`);
+    box.append(l);
+  }
+  box.onchange = () => { allBox.checked = !box.querySelector('input:checked'); };
+  allBox.onchange = () => { if (allBox.checked) box.querySelectorAll('input').forEach((c) => { c.checked = false; }); };
+}
+const ticked = (box) => [...box.querySelectorAll('input:checked')].map((c) => c.value);
+
+function fillTraitForm() {
+  const sel = $('trGroup');
+  const keep = sel.value;
+  sel.innerHTML = '';
+  for (const g of tr.groups.filter((x) => !x.always_on)) sel.add(new Option(g.name, g.id));
+  sel.add(new Option('New group…', ''));
+  if ([...sel.options].some((o) => o.value === keep)) sel.value = keep;
+  $('trNewGroup').hidden = sel.value !== '';
+  tickList($('trTrials'), $('trAllTrials'), tr.trials);
+  tickList($('trPeople'), $('trEveryone'), tr.people);
+}
+$('trGroup').addEventListener('change', () => { $('trNewGroup').hidden = $('trGroup').value !== ''; });
+$('trType').addEventListener('change', () => { $('trScale').hidden = $('trType').value !== 'integer'; });
+
+// Similar names: a warning while typing (the database refuses an exact match).
+function similarTraits(name) {
+  const n = normName(name);
+  if (n.length < 3) return [];
+  return tr.traits.filter((t) => {
+    const a = normName(t.name), b = normName(t.display_name);
+    return a === n || b === n || (n.length >= 4 && (a.includes(n) || n.includes(a) || b.includes(n)));
+  });
+}
+for (const id of ['trName', 'trDisplay']) {
+  $(id).addEventListener('input', () => {
+    const found = [...new Set([...similarTraits($('trName').value), ...similarTraits($('trDisplay').value)])];
+    $('trSimilar').hidden = !found.length;
+    $('trSimilar').textContent = found.length
+      ? `Already there, check it isn't the same trait: ${found.map((t) => `${t.display_name} (${t.name}, ${kindText(t)}, per ${t.scoring_unit})`).join('; ')}`
+      : '';
+  });
+}
+
+$('traitForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = $('trMsg');
+  const groupId = $('trGroup').value || null;
+  const trials = $('trAllTrials').checked ? [] : ticked($('trTrials'));
+  const people = $('trEveryone').checked ? [] : ticked($('trPeople'));
+  if (!$('trAllTrials').checked && !trials.length) return show(msg, 'Tick at least one trial (or "Every trial that uses this group").', 'err');
+  if (!$('trEveryone').checked && !people.length) return show(msg, 'Tick at least one person (or Everyone).', 'err');
+  if (!groupId && !trials.length) return show(msg, "A new group isn't in any trial yet: tick the trials this trait is for.", 'err');
+  const type = $('trType').value;
+  const shown = $('trDisplay').value;
+  $('trSave').disabled = true;
+  const { error } = await supabase.rpc('create_trait', {
+    p_name: $('trName').value, p_display_name: shown, p_description: $('trDesc').value,
+    p_group_id: groupId, p_new_group: groupId ? null : $('trNewGroup').value,
+    p_value_type: type, p_min: type === 'integer' ? Number($('trMin').value) : null, p_max: type === 'integer' ? Number($('trMax').value) : null,
+    p_scoring_unit: $('trUnit').value, p_trials: trials, p_people: people,
+  });
+  $('trSave').disabled = false;
+  if (error) return show(msg, error.message, 'err');
+  $('traitForm').reset();
+  $('trSimilar').hidden = true;
+  $('trScale').hidden = false;
+  show(msg, traitsMe.isAdmin
+    ? `Added ${shown}. Phones get it the next time they open the trial with signal.`
+    : `Added ${shown}. It goes to an admin first; phones get it once it's approved.`, 'ok');
+  await loadTraits();
+});
+
+// Admins: students' new traits (Review changes).
+function showTraitReview() {
+  const box = $('traitReviewList');
+  const pending = tr.traits.filter((t) => t.status === 'pending');
+  waiting.traits = pending.length;
+  showWaiting();
+  box.innerHTML = '';
+  if (!pending.length) { box.innerHTML = '<p class="hint">Nothing waiting for review.</p>'; return; }
+  const table = document.createElement('table');
+  table.className = 'lists';
+  table.innerHTML = '<tr><th>By</th><th>Trait</th><th>Kind</th><th>Per</th><th>Where</th><th>Who</th><th></th></tr>';
+  for (const t of pending) {
+    const row = table.insertRow();
+    const cell = (text) => { const td = row.insertCell(); td.textContent = text; return td; };
+    cell(t.creator?.name ?? '');
+    cell(`${t.display_name} (${t.name}) · ${tr.groups.find((g) => g.id === t.trait_group_id)?.name ?? ''}${t.description ? ` · ${t.description}` : ''}`);
+    cell(kindText(t));
+    cell(UNIT[t.scoring_unit] ?? t.scoring_unit);
+    cell(traitWhere(t));
+    cell(traitWho(t));
+    const td = row.insertCell();
+    td.style.whiteSpace = 'nowrap';
+    const button = (label, approve) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      if (!approve) b.className = 'quiet';
+      b.addEventListener('click', async () => {
+        if (!approve && !confirm(`Reject the trait ${t.display_name}? It won't reach phones.`)) return;
+        td.querySelectorAll('button').forEach((y) => { y.disabled = true; });
+        const { error: err } = await supabase.rpc('review_trait', { p_trait_id: t.id, p_approve: approve });
+        if (err) { show($('reviewMsg'), err.message, 'err'); td.querySelectorAll('button').forEach((y) => { y.disabled = false; }); return; }
+        await loadTraits();
+      });
+      return b;
+    };
+    td.append(button('Approve', true), ' ', button('Reject', false));
   }
   box.append(table);
 }

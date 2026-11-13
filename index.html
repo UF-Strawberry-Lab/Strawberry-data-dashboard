@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>UF Strawberry Dashboard</title>
   <meta name="robots" content="noindex">
-  <meta name="build" content="2026-11-12 21:10 UTC">
+  <meta name="build" content="2026-11-13 05:37 UTC">
   <style>
     :root {
       --bg: #FAFAF7; --card: #FFFFFF; --text: #1F2421; --muted: #6B716D; --border: #D9DCD6;
@@ -138,6 +138,7 @@
       <button type="button" data-tab="review" hidden>Review changes <span class="count" id="reviewCount" hidden></span></button>
       <button type="button" data-tab="members" hidden>Lab members</button>
       <button type="button" data-tab="highlights" hidden>Highlight genotypes</button>
+      <button type="button" data-tab="traits" hidden>Traits</button>
     </nav>
     <div class="card" id="noTabs" hidden>
       <p>Nothing here for this account: crew accounts use the field app only. Ask an admin if that seems wrong.</p>
@@ -174,6 +175,10 @@
         Approve keeps it; Reject deletes it.</p>
       <div id="reviewList"></div>
       <div class="row"><button id="approveAll" type="button" hidden>Approve all</button></div>
+      <h3 class="sub3">New traits by students</h3>
+      <p class="hint" style="margin-top:0">A student's new trait reaches phones only once approved. Check the name, scale and
+        scoring unit: once it has scores they can't change.</p>
+      <div id="traitReviewList"></div>
       <h3 class="sub3">Field-map edits by crew</h3>
       <p class="hint" style="margin-top:0">Already applied in the field. Approve keeps the edit; Reject undoes it
         (scores follow the plot back to its original genotype).</p>
@@ -268,9 +273,62 @@
       <p class="hint">Phones pick up changes the next time they open a trial with signal. Archived lists stop showing in the app.</p>
     </section>
     </div>
+
+    <div data-panel="traits" hidden>
+    <!-- Traits: browse every group and trait; admins and students add simple traits. -->
+    <section class="card" id="traitsCard">
+      <h2>Traits</h2>
+      <p class="hint" style="margin-top:0">Every trait group and its traits. "Where" is the trials whose phones show it; "Who" limits it
+        to some people's phones (keeps the app uncluttered). A trait with scores keeps its scale for good.</p>
+      <div id="traitList"><p class="hint">Loading…</p></div>
+      <h2 style="margin-top:24px">New trait</h2>
+      <form id="traitForm">
+        <label class="field" for="trName">Name (export column: letters, digits, _; no spaces)</label>
+        <input id="trName" type="text" required placeholder="e.g. RunnerCount" autocomplete="off">
+        <div class="msg err" id="trSimilar" hidden></div>
+        <label class="field" for="trDisplay">Name in the app</label>
+        <input id="trDisplay" type="text" required placeholder="e.g. Runners" autocomplete="off">
+        <label class="field" for="trDesc">What it means (how to score it)</label>
+        <input id="trDesc" type="text" placeholder="e.g. 0 = none, 5 = many runners" autocomplete="off">
+        <label class="field" for="trGroup">Group</label>
+        <select id="trGroup"></select>
+        <input id="trNewGroup" type="text" placeholder="New group name" hidden style="margin-top:6px" autocomplete="off">
+        <label class="field" for="trType">Kind</label>
+        <select id="trType">
+          <option value="integer">Score (whole numbers)</option>
+          <option value="yes_no">Yes / No</option>
+        </select>
+        <div class="row" id="trScale" style="margin-top:8px">
+          <label>From <input id="trMin" type="text" inputmode="numeric" value="1" style="width:5em"></label>
+          <label>to <input id="trMax" type="text" inputmode="numeric" value="5" style="width:5em"></label>
+          <span class="hint" style="margin:0">whole numbers, at most 11 values (e.g. 0 to 10)</span>
+        </div>
+        <label class="field" for="trUnit">Scored per</label>
+        <select id="trUnit">
+          <option value="plant">Plant</option>
+          <option value="berry">Berry</option>
+          <option value="plot">Plot</option>
+        </select>
+        <label class="field">Where</label>
+        <div class="where">
+          <label class="all"><input type="checkbox" id="trAllTrials" checked> Every trial that uses this group</label>
+          <div id="trTrials" class="trials"></div>
+        </div>
+        <label class="field">Who sees it in the app</label>
+        <div class="where">
+          <label class="all"><input type="checkbox" id="trEveryone" checked> Everyone</label>
+          <div id="trPeople" class="trials"></div>
+        </div>
+        <p class="hint">Need another kind (decimals, a count, numbered observations like Licor_obs)? Ask Mark to set it up.</p>
+        <p class="hint" id="trPendingHint" hidden>Your trait goes to an admin first; phones get it once it's approved.</p>
+        <div class="row"><button id="trSave" type="submit">Add trait</button></div>
+        <div class="msg" id="trMsg" hidden></div>
+      </form>
+    </section>
+    </div>
   </section>
   <p class="hint" id="version"></p>
 </main>
-<script type="module" src="./main.js?v=1794517828971"></script>
+<script type="module" src="./main.js?v=1794548278199"></script>
 </body>
 </html>
