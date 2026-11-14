@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>UF Strawberry Dashboard</title>
   <meta name="robots" content="noindex">
-  <meta name="build" content="2026-11-13 21:43 UTC">
+  <meta name="build" content="2026-11-14 03:04 UTC">
   <style>
     :root {
       --bg: #FAFAF7; --card: #FFFFFF; --text: #1F2421; --muted: #6B716D; --border: #D9DCD6;
@@ -72,6 +72,17 @@
     table.lists input[type=text] { padding: 6px 8px; min-width: 9em; }
     table.lists select { width: auto; min-width: 7.5em; padding: 6px 8px; }
     .scroll { overflow-x: auto; }
+    /* Phones: each table row becomes a stacked block (label: value), with the
+       buttons on their own line, so nothing runs off the right edge (Mark, 2026-11-13).
+       Labels come from the header row (stackable() in main.js). */
+    @media (max-width: 640px) {
+      table.lists, table.lists tbody, table.lists tr, table.lists td { display: block; width: auto; }
+      table.lists tr.head { display: none; }
+      table.lists tr { padding: 10px 0; border-bottom: 1px solid var(--border); }
+      table.lists td { border: none; padding: 2px 0; white-space: normal !important; }
+      table.lists td[data-label]::before { content: attr(data-label) ": "; color: var(--muted); font-size: 12px; }
+      table.lists td:last-child { padding-top: 8px; }
+    }
     [hidden] { display: none !important; }
     /* Arrived from a sign-up / reset link: only the password form (and who is signed in). */
     #app.password-only > :not(.who):not(#pwForm) { display: none !important; }
@@ -329,6 +340,6 @@
   </section>
   <p class="hint" id="version"></p>
 </main>
-<script type="module" src="./main.js?v=1794606215714"></script>
+<script type="module" src="./main.js?v=1794625464194"></script>
 </body>
 </html>

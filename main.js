@@ -9,12 +9,12 @@
 // build.ts), so the two always match.
 
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/+esm';
-import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './config.js?v=1794606215714';
-import { buildExport, TIME_ZONE } from './lib/format.js?v=1794606215714';
-import { weekDates, weekNumber } from './lib/selections.js?v=1794606215714';
-import { makeZip } from './zip.js?v=1794606215714';
-import { HIGHLIGHT_COLORS, dedupeHighlightRows, parseHighlightRows } from './lib/highlights.js?v=1794606215714';
-import { parseCsv } from './lib/csv.js?v=1794606215714';
+import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './config.js?v=1794625464194';
+import { buildExport, TIME_ZONE } from './lib/format.js?v=1794625464194';
+import { weekDates, weekNumber } from './lib/selections.js?v=1794625464194';
+import { makeZip } from './zip.js?v=1794625464194';
+import { HIGHLIGHT_COLORS, dedupeHighlightRows, parseHighlightRows } from './lib/highlights.js?v=1794625464194';
+import { parseCsv } from './lib/csv.js?v=1794625464194';
 
 // Opened from a sign-up or password-reset link? Read the address before the
 // Supabase client clears it, so the page can ask for a password straight away.
@@ -466,7 +466,7 @@ async function showMembers() {
   }
   const wrap = document.createElement('div');
   wrap.className = 'scroll';   // narrow screens scroll the table, not the page
-  wrap.append(table);
+  wrap.append(stackable(table));
   box.append(wrap);
 
   // Crew trial assignment: crew accounts and this season's trials.
@@ -533,7 +533,7 @@ async function showReview() {
     };
     td.append(button('Approve', true), ' ', button('Reject', false));
   }
-  box.append(table);
+  box.append(stackable(table));
   $('approveAll').hidden = false;
   $('approveAll').onclick = async () => {
     if (!confirm(`Approve all ${data.length} selections shown?`)) return;
@@ -586,7 +586,7 @@ async function showMapChanges() {
     };
     td.append(button('Approve', true), ' ', button('Reject', false));
   }
-  box.append(table);
+  box.append(stackable(table));
 }
 
 // ---------------- highlight lists ----------------
@@ -804,7 +804,7 @@ async function showLists(me) {
       td.append(b);
     }
   }
-  box.append(table);
+  box.append(stackable(table));
 }
 
 // ---------------- traits ----------------
@@ -892,7 +892,7 @@ function showTraitList() {
   }
   const wrap = document.createElement('div');
   wrap.className = 'scroll';
-  wrap.append(table);
+  wrap.append(stackable(table));
   box.append(wrap);
 }
 
@@ -1012,9 +1012,22 @@ function showTraitReview() {
     };
     td.append(button('Approve', true), ' ', button('Reject', false));
   }
-  box.append(table);
+  box.append(stackable(table));
 }
 
 $('version').textContent =`Page version ${document.querySelector('meta[name=build]')?.content ?? 'dev'}`;
 if (setupToken) showSetup();
 else await start();
+
+/**
+ * Give each cell its column's header as a label, so on a phone (narrow
+ * screen CSS in index.html) the stacked rows read "By: Vance_Whitaker".
+ */
+function stackable(table) {
+  table.rows[0].classList.add('head');   // hidden on phones; group-title rows (Traits) stay
+  const heads = [...table.rows[0].cells].map((c) => c.textContent.trim());
+  for (const row of [...table.rows].slice(1)) {
+    [...row.cells].forEach((td, i) => { if (heads[i]) td.dataset.label = heads[i]; });
+  }
+  return table;
+}
