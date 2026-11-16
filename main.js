@@ -9,12 +9,13 @@
 // build.ts), so the two always match.
 
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/+esm';
-import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './config.js?v=1794806350182';
-import { buildExport, TIME_ZONE } from './lib/format.js?v=1794806350182';
-import { weekDates, weekNumber } from './lib/selections.js?v=1794806350182';
-import { makeZip } from './zip.js?v=1794806350182';
-import { HIGHLIGHT_COLORS, dedupeHighlightRows, parseHighlightRows } from './lib/highlights.js?v=1794806350182';
-import { parseCsv } from './lib/csv.js?v=1794806350182';
+import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './config.js?v=1794868141000';
+import { buildExport, selectionsFile, TIME_ZONE } from './lib/format.js?v=1794868141000';
+import { buildInfoExport, mapFile } from './lib/info.js?v=1794868141000';
+import { weekDates, weekNumber } from './lib/selections.js?v=1794868141000';
+import { makeZip } from './zip.js?v=1794868141000';
+import { HIGHLIGHT_COLORS, dedupeHighlightRows, parseHighlightRows } from './lib/highlights.js?v=1794868141000';
+import { parseCsv } from './lib/csv.js?v=1794868141000';
 
 // Opened from a sign-up or password-reset link? Read the address before the
 // Supabase client clears it, so the page can ask for a password straight away.
@@ -201,36 +202,58 @@ async function start() {
     l.append(cb, ` ${t.name}`);
     box.append(l);
   }
+  if (role === 'admin') showInfoFiles(trials.map((t) => t.name));
+
   // "All trials" and single trials exclude each other.
   box.addEventListener('change', (e) => {
     if (e.target.id === 'allTrials' && e.target.checked) box.querySelectorAll('input[name=trial]').forEach((c) => { c.checked = false; });
     else if (e.target.name === 'trial') $('allTrials').checked = !box.querySelector('input[name=trial]:checked');
   });
 
-  // Weeks so far this season.
-  const sel = $('week');
-  sel.innerHTML = '<option value="">All weeks</option>';
+  // Weeks so far this season, in both week lists (Trial Data, Selections).
   const current = weekNumber(floridaNow().today, season.start_date);
-  for (let n = current ?? 0; n >= 1; n--) {
-    const d = weekDates(n, season.start_date);
-    sel.add(new Option(`Week ${n} · ${md(d.monday)} – ${md(d.sunday)}`, String(n)));
+  for (const sel of [$('week'), $('selWeek')]) {
+    sel.innerHTML = '<option value="">All weeks</option>';
+    for (let n = current ?? 0; n >= 1; n--) {
+      const d = weekDates(n, season.start_date);
+      sel.add(new Option(`Week ${n}${n === current ? ' (current)' : ''} · ${md(d.monday)} – ${md(d.sunday)}`, String(n)));
+    }
   }
 
   $('saveHint').textContent = canSaveAs
     ? 'Save as… asks where to save. You get one .zip with a folder holding scores.csv and plot_visits.csv.'
     : 'This browser saves the .zip to your Downloads folder (or asks where, if set up that way).';
-  $('exportForm').hidden = false;
+  // Admins: Trial Data, Trial/Genotype info and Selections. Students: Trial Data only.
+  if (role === 'admin') setUpExportTabs();
+  else $('exportForm').hidden = false;
 }
 
 // ---------------- export ----------------
-// One .zip per export, holding a folder <name>/ with scores.csv and
-// plot_visits.csv. "Save as…" opens the normal Save As box (Chrome/Edge),
-// so the researcher picks the folder; "Download" puts it in Downloads.
-// (An earlier version wrote into a chosen folder, but Chrome's folder
-// permission step failed silently on Mark's computer, 2026-11-10.)
+// One .zip per export, holding a folder <name>/ with the files. "Save as…"
+// opens the normal Save As box (Chrome/Edge), so the researcher picks the
+// folder; "Download" puts it in Downloads. (An earlier version wrote into a
+// chosen folder, but Chrome's folder permission step failed silently on
+// Mark's computer, 2026-11-10.)
+
+/** Data export's own tabs (admins). The address keeps the choice: #export/info. */
+function setUpExportTabs() {
+  $('exportTabs').hidden = false;
+  for (const b of document.querySelectorAll('#exportTabs button')) b.onclick = () => showExportTab(b.dataset.sub);
+  const wanted = location.hash.split('/')[1];
+  showExportTab(['data', 'info', 'selections'].includes(wanted) ? wanted : 'data');
+}
+function showExportTab(name) {
+  for (const f of document.querySelectorAll('[data-sub-panel]')) f.hidden = f.dataset.subPanel !== name;
+  for (const b of document.querySelectorAll('#exportTabs button')) b.classList.toggle('active', b.dataset.sub === name);
+  history.replaceState(null, '', name === 'data' ? '#export' : `#export/${name}`);
+}
 
 $('exportForm').addEventListener('submit', (e) => { e.preventDefault(); void doExport(canSaveAs); });
 $('downloadBtn').addEventListener('click', () => void doExport(false));
+$('infoForm').addEventListener('submit', (e) => { e.preventDefault(); void doInfoExport(canSaveAs); });
+$('infoDownloadBtn').addEventListener('click', () => void doInfoExport(false));
+$('selForm').addEventListener('submit', (e) => { e.preventDefault(); void doSelectionsExport(canSaveAs); });
+$('selDownloadBtn').addEventListener('click', () => void doSelectionsExport(false));
 
 // Any error the page didn't expect is shown on the page, not only in the console.
 const showUnexpected = (err) => show($('exportMsg'), `Something went wrong: ${err?.message ?? err}`, 'err');
@@ -239,14 +262,15 @@ window.addEventListener('unhandledrejection', (e) => showUnexpected(e.reason));
 
 const csvRows = (csv) => csv.trimEnd().split('\r\n').length - 1;
 
-/** saveAs: ask where to save (Chrome/Edge); otherwise download to the Downloads folder. */
-async function doExport(saveAs) {
-  const msg = $('exportMsg');
-  const trials = [...document.querySelectorAll('input[name=trial]:checked')].map((c) => c.value);
-  const week = $('week').value ? Number($('week').value) : null;
-  const range = week ? weekDates(week, season.start_date) : null;
-  const name = [...(trials.length ? trials : ['All_trials']), ...(week ? [`Week_${week}`] : []), floridaNow().stamp].join('_');
-
+/**
+ * Save one export as <name>.zip. saveAs: ask where to save (Chrome/Edge);
+ * otherwise download to the Downloads folder. build() reads the data and
+ * returns { files: { path: text }, summary }.
+ */
+async function saveZip({ saveAs, name, msg, buttons, build, single = null }) {
+  // single: the one file wanted ("genotypes.csv"): saved as <name>.csv, no zip.
+  const ext = single ? 'csv' : 'zip';
+  const type = single ? 'text/csv' : 'application/zip';
   // Ask where to save first: the browser only allows it straight after the click.
   let target = null;
   let note = '';
@@ -254,8 +278,10 @@ async function doExport(saveAs) {
     show(msg, 'Choose where to save…', 'ok');
     try {
       target = await window.showSaveFilePicker({
-        id: 'strawberry-export', suggestedName: `${name}.zip`,
-        types: [{ description: 'Zip file', accept: { 'application/zip': ['.zip'] } }],
+        id: 'strawberry-export', suggestedName: `${name}.${ext}`,
+        types: [single
+          ? { description: 'CSV file', accept: { 'text/csv': ['.csv'] } }
+          : { description: 'Zip file', accept: { 'application/zip': ['.zip'] } }],
       });
     } catch (err) {
       if (err?.name === 'AbortError') return show(msg, 'Cancelled, nothing was saved.', 'err');
@@ -263,43 +289,138 @@ async function doExport(saveAs) {
     }
   }
 
-  $('exportBtn').disabled = true;
-  $('downloadBtn').disabled = true;
+  for (const b of buttons) b.disabled = true;
   try {
     show(msg, 'Reading the data…', 'ok');
-    const { data, error } = await supabase.rpc('export_data', {
-      p_trials: trials, p_from: range?.monday ?? null, p_to: range?.sunday ?? null,
-    });
-    if (error) throw new Error(error.message);
-    show(msg, 'Building the files…', 'ok');
-    const result = buildExport(data);
-    const summary = `${csvRows(result.files['scores.csv'])} score rows, ${csvRows(result.files['plot_visits.csv'])} plot visits ` +
-      `(${result.scores} scores, ${result.notes} notes).`;
-    const zip = makeZip(Object.entries(result.files).map(([file, text]) => ({ name: `${name}/${file}`, text })));
+    const { files, summary } = await build();
+    const zip = single
+      ? new TextEncoder().encode(files[single] ?? '')
+      : makeZip(Object.entries(files).map(([file, text]) => ({ name: `${name}/${file}`, text })));
+    const top = Object.keys(files).filter((f) => !f.includes('/'));
+    const holds = single ? null : Object.keys(files).some((f) => f.includes('/'))
+      ? (top.length ? `${top.join(', ')} and a maps folder` : 'a maps folder')
+      : top.join(' and ');
 
     if (target) {
       show(msg, 'Saving…', 'ok');
       const w = await target.createWritable();
       await w.write(zip);
       await w.close();
-      show(msg, `Saved ${target.name}: ${summary}\nIt holds a folder ${name} with scores.csv and plot_visits.csv ` +
+      show(msg, single ? `Saved ${target.name}: ${summary}` : `Saved ${target.name}: ${summary}\nIt holds a folder ${name} with ${holds} ` +
         '(Windows: right-click the file -> Extract All).', 'ok');
     } else {
       const a = document.createElement('a');
-      a.href = URL.createObjectURL(new Blob([zip], { type: 'application/zip' }));
-      a.download = `${name}.zip`;
+      a.href = URL.createObjectURL(new Blob([zip], { type }));
+      a.download = `${name}.${ext}`;
       document.body.append(a);
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
-      show(msg, `Downloaded ${name}.zip: ${summary}\nIt holds scores.csv and plot_visits.csv.${note}`, 'ok');
+      show(msg, `Downloaded ${name}.${ext}: ${summary}${holds ? `\nIt holds ${holds}.` : ''}${note}`, 'ok');
     }
   } catch (err) {
     show(msg, `Export stopped: ${err?.name ?? ''} ${err?.message ?? err}`, 'err');
   } finally {
-    $('exportBtn').disabled = false;
-    $('downloadBtn').disabled = false;
+    for (const b of buttons) b.disabled = false;
   }
+}
+
+/** export_data() for some trials (none = all) and a week (null = all weeks). */
+async function readExportData(trials, week) {
+  const range = week ? weekDates(week, season.start_date) : null;
+  const { data, error } = await supabase.rpc('export_data', {
+    p_trials: trials, p_from: range?.monday ?? null, p_to: range?.sunday ?? null,
+  });
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+/** Trial Data: scores.csv and plot_visits.csv. */
+function doExport(saveAs) {
+  const trials = [...document.querySelectorAll('input[name=trial]:checked')].map((c) => c.value);
+  const week = $('week').value ? Number($('week').value) : null;
+  return saveZip({
+    saveAs, msg: $('exportMsg'), buttons: [$('exportBtn'), $('downloadBtn')],
+    name: [...(trials.length ? trials : ['All_trials']), ...(week ? [`Week_${week}`] : []), floridaNow().stamp].join('_'),
+    build: async () => {
+      const result = buildExport(await readExportData(trials, week));
+      return {
+        files: result.files,
+        summary: `${csvRows(result.files['scores.csv'])} score rows, ${csvRows(result.files['plot_visits.csv'])} plot visits ` +
+          `(${result.scores} scores, ${result.notes} notes).`,
+      };
+    },
+  });
+}
+
+/** Trial/Genotype info (admins): genotypes.csv, trial_traits.csv, maps/<Trial>_map.csv. */
+/** The file boxes: All files, the genotype table, the trial settings, then a map per trial. */
+function showInfoFiles(trialNames) {
+  const box = $('infoFiles');
+  box.innerHTML = '';
+  const add = (value, text, all = false) => {
+    const l = document.createElement('label');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    if (all) { l.className = 'all'; cb.id = 'infoAll'; cb.checked = true; } else { cb.name = 'info'; cb.value = value; }
+    l.append(cb, ` ${text}`);
+    box.append(l);
+  };
+  /** A header across the whole grid: "Other info", "Maps" (Mark, 2026-11-16). */
+  const header = (text) => {
+    const h = document.createElement('div');
+    h.className = 'filegroup';
+    h.textContent = text;
+    box.append(h);
+  };
+  add('', 'All files', true);
+  header('Other info');
+  add('genotypes.csv', 'Genotype table');
+  add('trial_traits.csv', 'Trial settings and traits');
+  header('Maps');
+  for (const t of trialNames) add(mapFile(t), t);
+  // "All files" and single files exclude each other, like the trial boxes.
+  box.onchange = (e) => {
+    if (e.target.id === 'infoAll' && e.target.checked) box.querySelectorAll('input[name=info]').forEach((c) => { c.checked = false; });
+    else if (e.target.name === 'info') $('infoAll').checked = !box.querySelector('input[name=info]:checked');
+  };
+}
+
+function doInfoExport(saveAs) {
+  const wanted = [...document.querySelectorAll('input[name=info]:checked')].map((c) => c.value);   // none = all files
+  const single = wanted.length === 1 ? wanted[0] : null;
+  const base = single ? single.replace(/^maps\//, '').replace(/\.csv$/, '') : 'Trial_genotype_info';
+  return saveZip({
+    saveAs, msg: $('infoMsg'), buttons: [$('infoBtn'), $('infoDownloadBtn')], single,
+    name: `${base}_${floridaNow().stamp}`,
+    build: async () => {
+      const { data, error } = await supabase.rpc('export_info');
+      if (error) throw new Error(error.message);
+      const result = buildInfoExport(data);
+      const files = wanted.length ? Object.fromEntries(Object.entries(result.files).filter(([f]) => wanted.includes(f))) : result.files;
+      if (!Object.keys(files).length) throw new Error('None of the chosen files has any rows yet.');
+      const maps = Object.keys(files).filter((f) => f.startsWith('maps/')).length;
+      const parts = [
+        ...(files['genotypes.csv'] ? [`${result.genotypes} genotypes`] : []),
+        ...(files['trial_traits.csv'] ? ['trial settings'] : []),
+        ...(maps ? [`${maps} trial map${maps === 1 ? '' : 's'}`] : []),
+      ];
+      return { files, summary: `${parts.join(', ')}.` };
+    },
+  });
+}
+
+/** Selections (admins): selections.csv, one row per genotype with Select = YES. */
+function doSelectionsExport(saveAs) {
+  const week = $('selWeek').value ? Number($('selWeek').value) : null;
+  return saveZip({
+    saveAs, msg: $('selMsg'), buttons: [$('selBtn'), $('selDownloadBtn')], single: 'selections.csv',
+    name: ['Selections', ...(week ? [`Week_${week}`] : []), floridaNow().stamp].join('_'),
+    build: async () => {
+      const result = selectionsFile(await readExportData([], week));
+      return { files: { 'selections.csv': result.csv }, summary: `${result.genotypes} genotypes selected.` };
+    },
+  });
 }
 
 // ---------------- review student selections (admins) ----------------
@@ -322,14 +443,15 @@ function setUpTabs(allowed) {
     b.hidden = !allowed.includes(b.dataset.tab);
     b.onclick = () => showTab(b.dataset.tab);
   }
-  const wanted = location.hash.slice(1);
+  const wanted = location.hash.slice(1).split('/')[0];   // #export/info: the tab, then Data export's own tab
   if (allowed.length) showTab(allowed.includes(wanted) ? wanted : allowed[0]);
 }
 
 function showTab(name) {
   for (const p of document.querySelectorAll('[data-panel]')) p.hidden = p.dataset.panel !== name;
   for (const b of document.querySelectorAll('#tabs button')) b.classList.toggle('active', b.dataset.tab === name);
-  history.replaceState(null, '', `#${name}`);
+  // Keep Data export's own tab in the address (#export/info) when staying on it.
+  if (!(name === 'export' && location.hash.startsWith('#export/'))) history.replaceState(null, '', `#${name}`);
 }
 
 // Review tab: both lists, and the number waiting shown on the tab.

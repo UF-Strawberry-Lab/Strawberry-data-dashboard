@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>UF Strawberry Dashboard</title>
   <meta name="robots" content="noindex">
-  <meta name="build" content="2026-11-16 05:19 UTC">
+  <meta name="build" content="2026-11-16 22:29 UTC">
   <style>
     :root {
       --bg: #FAFAF7; --card: #FFFFFF; --text: #1F2421; --muted: #6B716D; --border: #D9DCD6;
@@ -82,6 +82,14 @@
     .tabs button { background: transparent; color: var(--muted); border: none; border-bottom: 3px solid transparent;
                    border-radius: 0; padding: 10px 14px; margin-bottom: -2px; }
     .tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+    /* Data export's own tabs: rounded buttons, so they don't look like the main tabs (Mark, 2026-11-16). */
+    /* Trial/Genotype info: a header over each kind of file. */
+    .trials .filegroup { grid-column: 1 / -1; font-size: 14px; font-weight: 700; color: var(--muted);
+                         text-transform: uppercase; letter-spacing: .04em; margin-top: 8px; }
+    .tabs.subtabs { border-bottom: none; gap: 8px; margin: 0 0 14px; }
+    .tabs.subtabs button { border: 1px solid var(--border); border-radius: 999px; padding: 6px 16px; margin: 0;
+                           font-size: 15px; background: var(--card); color: var(--text); }
+    .tabs.subtabs button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
     .tabs .count { display: inline-block; min-width: 20px; padding: 0 6px; border-radius: 999px; font-size: 12px;
                    background: var(--accent); color: #fff; margin-left: 4px; }
     /* Members table: inputs sized to their content, not squeezed */
@@ -178,7 +186,14 @@
       <p>Exports are for admins and students. Ask an admin to check your role, then reload this page.</p>
     </div>
 
-    <form class="card" id="exportForm" hidden>
+    <!-- Admins: three kinds of export (Mark, 2026-11-16). Students see Trial Data only, without these. -->
+    <nav class="tabs subtabs" id="exportTabs" hidden>
+      <button type="button" data-sub="data">Trial Data</button>
+      <button type="button" data-sub="info">Trial/Genotype info</button>
+      <button type="button" data-sub="selections">Selections</button>
+    </nav>
+
+    <form class="card" id="exportForm" data-sub-panel="data" hidden>
       <h2>What to export</h2>
       <div class="trials" id="trials"></div>
       <label class="field" for="week">Weeks</label>
@@ -191,6 +206,30 @@
       </div>
       <p class="hint" id="saveHint"></p>
       <div class="msg" id="exportMsg" hidden></div>
+    </form>
+
+    <form class="card" id="infoForm" data-sub-panel="info" hidden>
+      <h2>Trial and genotype info</h2>
+      <!-- One box per file (main.js adds a map per trial). All files, or any of them. -->
+      <div class="trials" id="infoFiles"></div>
+      <p class="hint">One file saves as a .csv; several save as one .zip.</p>
+      <div class="row">
+        <button id="infoBtn" type="submit">Save as…</button>
+        <button id="infoDownloadBtn" type="button" class="quiet">Download</button>
+      </div>
+      <div class="msg" id="infoMsg" hidden></div>
+    </form>
+
+    <form class="card" id="selForm" data-sub-panel="selections" hidden>
+      <h2>Selections</h2>
+      <p>Every genotype with Select = YES, one row each, in all trials.</p>
+      <label class="field" for="selWeek">Weeks</label>
+      <select id="selWeek"></select>
+      <div class="row">
+        <button id="selBtn" type="submit">Save as…</button>
+        <button id="selDownloadBtn" type="button" class="quiet">Download</button>
+      </div>
+      <div class="msg" id="selMsg" hidden></div>
     </form>
     </div>
 
@@ -335,6 +374,6 @@
   </section>
   <p class="hint" id="version"></p>
 </main>
-<script type="module" src="./main.js?v=1794806350182"></script>
+<script type="module" src="./main.js?v=1794868141000"></script>
 </body>
 </html>
