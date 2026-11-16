@@ -9,12 +9,12 @@
 // build.ts), so the two always match.
 
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/+esm';
-import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './config.js?v=1794625464194';
-import { buildExport, TIME_ZONE } from './lib/format.js?v=1794625464194';
-import { weekDates, weekNumber } from './lib/selections.js?v=1794625464194';
-import { makeZip } from './zip.js?v=1794625464194';
-import { HIGHLIGHT_COLORS, dedupeHighlightRows, parseHighlightRows } from './lib/highlights.js?v=1794625464194';
-import { parseCsv } from './lib/csv.js?v=1794625464194';
+import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './config.js?v=1794806350182';
+import { buildExport, TIME_ZONE } from './lib/format.js?v=1794806350182';
+import { weekDates, weekNumber } from './lib/selections.js?v=1794806350182';
+import { makeZip } from './zip.js?v=1794806350182';
+import { HIGHLIGHT_COLORS, dedupeHighlightRows, parseHighlightRows } from './lib/highlights.js?v=1794806350182';
+import { parseCsv } from './lib/csv.js?v=1794806350182';
 
 // Opened from a sign-up or password-reset link? Read the address before the
 // Supabase client clears it, so the page can ask for a password straight away.
@@ -167,12 +167,12 @@ async function start() {
     void showLists(meInfo);
     void loadHlOptions();
     traitsMe = meInfo;
-    $('trPendingHint').hidden = meInfo.isAdmin;
     void loadTraits();
   }
   if (meInfo?.isAdmin) {
     $('membersCard').hidden = false;
     void showMembers();
+    void showCrewNames();
     $('reviewCard').hidden = false;
     void refreshReview();
   }
@@ -310,7 +310,7 @@ async function doExport(saveAs) {
 // One panel per tab (data-panel in index.html). The address keeps the tab
 // (#review), so a reload or a bookmark opens the same one.
 const TABS_BY_ROLE = {
-  admin: ['export', 'review', 'members', 'highlights', 'traits'],
+  admin: ['export', 'review', 'members', 'highlights', 'traits', 'crew'],
   student: ['export', 'highlights', 'traits'],
   crew: [],
 };
@@ -490,6 +490,51 @@ async function assign(give) {
   show($('memberMsg'), `${data}. The phone sees it after "Refresh trial list".`, 'ok');
   await showMembers();
 }
+// Crew names (crew_names): the "Who is rating?" buttons on crew phones.
+// Only admins add and delete them (RLS); scores keep the name as text, so
+// deleting a name changes nothing already saved.
+async function showCrewNames() {
+  const box = $('crewNameList');
+  const { data, error } = await supabase.from('crew_names').select('id, name').order('name');
+  box.innerHTML = '';
+  if (error) { box.textContent = error.message; return; }
+  if (!data.length) { box.innerHTML = '<p class="hint">No names yet: crew phones have nobody to choose.</p>'; return; }
+  for (const n of data) {
+    const row = document.createElement('div');
+    row.className = 'namerow';
+    const name = document.createElement('span');
+    name.textContent = n.name;
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'quiet';
+    del.textContent = 'Delete';
+    del.addEventListener('click', async () => {
+      if (!confirm(`Delete ${n.name} from the crew names? Scores already saved keep the name.`)) return;
+      del.disabled = true;
+      const { error: err } = await supabase.from('crew_names').delete().eq('id', n.id);
+      if (err) { show($('crewNameMsg'), err.message, 'err'); del.disabled = false; return; }
+      show($('crewNameMsg'), `${n.name} deleted.`, 'ok');
+      await showCrewNames();
+    });
+    row.append(name, del);
+    box.append(row);
+  }
+}
+$('crewNameForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = $('crewNameNew').value.trim().replace(/\s+/g, ' ');
+  if (!name) return;
+  $('crewNameAdd').disabled = true;
+  const { error } = await supabase.from('crew_names').insert({ name });
+  $('crewNameAdd').disabled = false;
+  if (error) {
+    return show($('crewNameMsg'), error.code === '23505' ? `${name} is already on the list.` : error.message, 'err');
+  }
+  $('crewNameNew').value = '';
+  show($('crewNameMsg'), `${name} added. Phones get it the next time they open a trial with signal.`, 'ok');
+  await showCrewNames();
+});
+
 $('assignBtn').addEventListener('click', () => void assign(true));
 $('unassignBtn').addEventListener('click', () => void assign(false));
 
@@ -808,171 +853,199 @@ async function showLists(me) {
 }
 
 // ---------------- traits ----------------
-// Browse every group and trait; admins and students add simple traits (a
-// whole-number score or yes/no) with create_trait(), which checks names,
-// scales and trials (supabase/migrations/20261113000001_traits_dashboard.sql).
-// A student's trait waits on Review changes until an admin approves it.
-// "Where" (trait_trials) and "Who" (trait_researchers): empty = no limit.
+// Every group and trait, read only (Mark, 2026-11-15): new traits are added
+// by Mark in a migration. A group lists the trials that use it; a trait
+// limited to some trials (trait_trials) or people (trait_researchers) says
+// so. A trait shown in a second group (trait_group_extras: Firmness in CGS
+// quality) is listed there too. The same data draws the Crew Phones tab
+// (admins): crew_trials (trials every crew phone opens) and
+// crew_trial_groups (the groups crew score in each), written directly (RLS).
 
 let traitsMe = null;
-let tr = { traits: [], groups: [], trials: [], people: [], groupTrials: new Map() };
-const normName = (n) => (n ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
-const UNIT = { berry: 'Berry', plant: 'Plant', plot: 'Plot' };
+let tr = { traits: [], groups: [], trials: [], people: [], groupTrials: new Map(), extras: [], crewTrials: new Set(), crewGroups: [] };
+const UNIT = { berry: 'berry', plant: 'plant', plot: 'plot' };
+const COUNT_WHEEL = ['MktNo', 'Cull'];   // packages/shared controls.ts COUNT_WHEEL_TRAITS
 
 function kindText(t) {
-  if (t.value_type === 'yes_no') return 'Yes / No';
+  if (t.value_type === 'yes_no') return t.carries_forward ? 'Yes / No, stays on later visits' : 'Yes / No';
   if (t.value_type === 'sequence') return `Numbered: ${t.value_label ?? ''}1, ${t.value_label ?? ''}2, …`;
+  if (t.value_type === 'decimal') return `Number ${Number(t.scale_min).toFixed(1)}–${Number(t.scale_max).toFixed(1)} (digit wheels)`;
+  if (COUNT_WHEEL.includes(t.name)) return `Count ${Number(t.scale_min)}–${Number(t.scale_max)} (wheel, starts at 0)`;
   return `Score ${Number(t.scale_min)}–${Number(t.scale_max)}`;
 }
 const trialName = (id) => tr.trials.find((x) => x.id === id)?.name;
-function traitWhere(t) {
-  const own = (t.trait_trials ?? []).map((x) => trialName(x.trial_id)).filter(Boolean);
-  if ((t.trait_trials ?? []).length) return own.length ? own.sort(natural).join(', ') : '(other seasons)';
-  const g = tr.groups.find((x) => x.id === t.trait_group_id);
-  if (g?.always_on) return 'Every trial';
-  const names = (tr.groupTrials.get(t.trait_group_id) ?? []).map(trialName).filter(Boolean);
-  return names.length ? names.sort(natural).join(', ') : '(no trials use this group yet)';
-}
+/** The trials (this season) a group is used in. */
+const groupTrialNames = (groupId) => (tr.groupTrials.get(groupId) ?? []).map(trialName).filter(Boolean).sort(natural);
+/** Who a trait is limited to (trait_researchers), or null for everyone. */
 function traitWho(t) {
   const ids = (t.trait_researchers ?? []).map((x) => x.researcher_id);
-  return ids.length ? ids.map((id) => tr.people.find((p) => p.id === id)?.name ?? '?').join(', ') : 'Everyone';
+  return ids.length ? ids.map((id) => tr.people.find((p) => p.id === id)?.name ?? '?').join(', ') : null;
 }
 
 async function loadTraits() {
   if (!traitsMe || !season) return;
-  const [traits, groups, trials, people, ttg] = await Promise.all([
-    supabase.from('traits').select('id, name, display_name, description, value_type, scale_min, scale_max, scoring_unit, active, status, value_label, trait_group_id, created_by, creator:researchers!traits_created_by_fkey(name), trait_trials(trial_id), trait_researchers(researcher_id)'),
+  const admin = traitsMe.isAdmin;
+  const none = Promise.resolve({ data: [], error: null });
+  const results = await Promise.all([
+    supabase.from('traits').select('id, name, display_name, description, value_type, scale_min, scale_max, scoring_unit, sort_order, active, status, value_label, carries_forward, trait_group_id, creator:researchers!traits_created_by_fkey(name), trait_trials(trial_id), trait_researchers(researcher_id)'),
     supabase.from('trait_groups').select('id, name, sort_order, always_on').order('sort_order'),
-    supabase.from('trials').select('id, name, seasons!inner(is_current)').eq('seasons.is_current', true).order('name'),
+    supabase.from('trials').select('id, name, expected_plots_per_bed, seasons!inner(is_current)').eq('seasons.is_current', true).order('name'),
     supabase.from('researchers').select('id, name, role').order('name'),
     supabase.from('trial_trait_groups').select('trait_group_id, trial_id'),
+    supabase.from('trait_group_extras').select('trait_group_id, trait_id, sort_order'),
+    admin ? supabase.from('crew_trials').select('trial_id') : none,
+    admin ? supabase.from('crew_trial_groups').select('trial_id, trait_group_id') : none,
   ]);
-  const err = traits.error ?? groups.error ?? trials.error ?? people.error ?? ttg.error;
+  const err = results.find((r) => r.error)?.error;
   if (err) { $('traitList').textContent = err.message; return; }
-  tr = { traits: traits.data, groups: groups.data, trials: trials.data, people: people.data.filter((p) => p.role !== 'crew'), groupTrials: new Map() };
-  const current = new Set(tr.trials.map((t) => t.id));
-  for (const x of ttg.data) {
+  const [traits, groups, trials, people, ttg, extras, crewTrials, crewGroups] = results.map((r) => r.data);
+  tr = {
+    traits, groups, trials, people, groupTrials: new Map(),
+    extras, crewTrials: new Set(crewTrials.map((x) => x.trial_id)), crewGroups,
+  };
+  const current = new Set(trials.map((t) => t.id));
+  for (const x of ttg) {
     if (!current.has(x.trial_id)) continue;
     if (!tr.groupTrials.has(x.trait_group_id)) tr.groupTrials.set(x.trait_group_id, []);
     tr.groupTrials.get(x.trait_group_id).push(x.trial_id);
   }
   showTraitList();
-  fillTraitForm();
-  if (traitsMe.isAdmin) showTraitReview();
+  if (admin) { showCrewSetup(); showTraitReview(); }
 }
 
+/** One block per group: its trials as tags, then each trait with what it means, in the app's order. */
 function showTraitList() {
   const box = $('traitList');
   box.innerHTML = '';
-  const table = document.createElement('table');
-  table.className = 'lists';
-  table.innerHTML = '<tr><th>Trait</th><th>Kind</th><th>Per</th><th>Where</th><th>Who</th><th></th></tr>';
+  const el = (tag, cls, text) => {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  };
   for (const g of tr.groups) {
-    const list = tr.traits.filter((t) => t.trait_group_id === g.id && t.status !== 'rejected')
-      .sort((a, b) => a.name.localeCompare(b.name));
+    // Its own traits, plus traits shown here from another group (trait_group_extras).
+    const own = tr.traits.filter((t) => t.trait_group_id === g.id).map((t) => ({ t, order: t.sort_order ?? 0, shared: false }));
+    const shared = tr.extras.filter((x) => x.trait_group_id === g.id)
+      .map((x) => ({ t: tr.traits.find((t) => t.id === x.trait_id), order: x.sort_order, shared: true }))
+      .filter((x) => x.t);
+    const list = [...own, ...shared].filter(({ t }) => t.status !== 'rejected').sort((a, b) => a.order - b.order);
     if (!list.length) continue;
-    const head = table.insertRow();
-    const th = document.createElement('th');
-    th.colSpan = 6;
-    th.textContent = g.name + (g.always_on ? ' (always on)' : '');
-    th.style.paddingTop = '14px';
-    head.append(th);
-    for (const t of list) {
-      const row = table.insertRow();
-      if (!t.active || t.status === 'pending') row.className = 'archived';
-      const cell = (text, title) => { const td = row.insertCell(); td.textContent = text; if (title) td.title = title; return td; };
-      cell(`${t.display_name}${t.display_name !== t.name ? ` (${t.name})` : ''}`, t.description ?? '');
-      cell(kindText(t));
-      cell(UNIT[t.scoring_unit] ?? t.scoring_unit);
-      cell(traitWhere(t));
-      cell(traitWho(t));
-      cell(t.status === 'pending' ? `Waiting for an admin${t.creator?.name ? ` (by ${t.creator.name})` : ''}`
-        : !t.active ? 'Retired' : t.creator?.name ? `by ${t.creator.name}` : '');
+
+    const block = el('div', 'tgroup');
+    block.append(el('h3', null, g.name));
+    const tags = el('div', 'tags');
+    if (g.always_on) tags.append(el('span', 'tag', 'Every trial (always on; not on crew phones)'));
+    else if (g.name === 'Done') tags.append(el('span', 'tag', 'Crew phones, every trial (added automatically, last)'));
+    else {
+      const names = groupTrialNames(g.id);
+      for (const n of names) tags.append(el('span', 'tag', n));
+      if (!names.length) tags.append(el('span', 'tag none', 'No trial uses this group yet'));
     }
+    block.append(tags);
+
+    for (const { t, shared: isShared } of list) {
+      const item = el('div', `trait${!t.active || t.status === 'pending' ? ' retired' : ''}`);
+      const name = el('div', 'tname', t.display_name);
+      name.append(el('code', null, t.name));
+      item.append(name);
+      const meta = [kindText(t), `per ${UNIT[t.scoring_unit] ?? t.scoring_unit}`];
+      if (isShared) meta.push(`also in ${tr.groups.find((x) => x.id === t.trait_group_id)?.name ?? 'another group'} (same export column)`);
+      const limited = t.trait_trials ?? [];
+      if (limited.length) {
+        const names = limited.map((x) => trialName(x.trial_id)).filter(Boolean).sort(natural);
+        meta.push(`only in ${names.length ? names.join(', ') : 'earlier seasons'}`);
+      }
+      const who = traitWho(t);
+      if (who) meta.push(`only on ${who}'s phone`);
+      if (!t.active) meta.push('retired');
+      if (t.status === 'pending') meta.push('waiting for an admin');
+      item.append(el('div', 'tmeta', meta.join(' · ')));
+      if (t.description) item.append(el('div', 'tdesc', t.description));
+      block.append(item);
+    }
+    box.append(block);
   }
-  const wrap = document.createElement('div');
-  wrap.className = 'scroll';
-  wrap.append(stackable(table));
-  box.append(wrap);
 }
 
-/** A tick list with an "all" box: ticking a single item unticks "all", and the other way round. */
-function tickList(box, allBox, items) {
+// ---------------- Crew Phones tab (admins) ----------------
+// One setup for every crew phone (Mark, 2026-11-15): tick a trial to give it
+// to crew phones, then tick the groups they score there. Selection is never
+// on crew phones and Done is added by the app, so neither is listed.
+
+/** The groups a trial offers: its trial_trait_groups, plus groups with a trait limited to it (LI-COR in CGS). */
+function trialGroups(trialId) {
+  const ids = new Set();
+  for (const [g, trials] of tr.groupTrials) if (trials.includes(trialId)) ids.add(g);
+  for (const t of tr.traits) if ((t.trait_trials ?? []).some((x) => x.trial_id === trialId)) ids.add(t.trait_group_id);
+  return tr.groups.filter((g) => ids.has(g.id) && !g.always_on && g.name !== 'Done');
+}
+
+function showCrewSetup() {
+  $('crewSetupCard').hidden = false;
+  const box = $('crewSetup');
   box.innerHTML = '';
-  for (const it of items) {
-    const l = document.createElement('label');
+  /** Save a change; say what happened. Returns false (and shows why) if the database refused. */
+  const save = async (request, said) => {
+    const { error } = await request;
+    if (error) { show($('crewMsg'), error.message, 'err'); return false; }
+    if (said) show($('crewMsg'), said, 'ok');
+    return true;
+  };
+  const checkbox = (checked, onChange) => {
     const cb = document.createElement('input');
     cb.type = 'checkbox';
-    cb.value = it.id;
-    l.append(cb, ` ${it.name}`);
-    box.append(l);
+    cb.checked = checked;
+    cb.addEventListener('change', async () => {
+      cb.disabled = true;
+      await onChange(cb.checked);
+      await loadTraits();   // redraw from the database, so the boxes show what was saved
+    });
+    return cb;
+  };
+  // Only trials crew could score: imported with their trial settings (plots per bed set,
+  // as on the export page) and with trait groups. One already on stays listed, so it
+  // can be switched off.
+  const ready = (t) => t.expected_plots_per_bed != null && trialGroups(t.id).length > 0;
+  const shown = tr.trials.filter((t) => ready(t) || tr.crewTrials.has(t.id));
+  for (const t of shown) {
+    const on = tr.crewTrials.has(t.id);
+    const row = document.createElement('div');
+    row.className = 'trial';
+    const label = document.createElement('label');
+    label.append(checkbox(on, async (want) => {
+      if (want) return save(supabase.from('crew_trials').insert({ trial_id: t.id }), `Crew phones now open ${t.name}. Tick the groups they score there.`);
+      if (!confirm(`Take ${t.name} off crew phones? Scores already made there stay.`)) return false;
+      return await save(supabase.from('crew_trial_groups').delete().eq('trial_id', t.id), null)
+        && save(supabase.from('crew_trials').delete().eq('trial_id', t.id), `${t.name} is off crew phones.`);
+    }), ` ${t.name}`);
+    row.append(label);
+    if (on) {
+      const groups = trialGroups(t.id);
+      const chosen = new Set(tr.crewGroups.filter((x) => x.trial_id === t.id).map((x) => x.trait_group_id));
+      const list = document.createElement('div');
+      list.className = 'reps';
+      if (!groups.length) list.append('This trial has no trait groups yet.');
+      for (const g of groups) {
+        const gl = document.createElement('label');
+        gl.append(checkbox(chosen.has(g.id), (want) => (want
+          ? save(supabase.from('crew_trial_groups').insert({ trial_id: t.id, trait_group_id: g.id }), `Crew score ${g.name} in ${t.name}.`)
+          : save(supabase.from('crew_trial_groups').delete().eq('trial_id', t.id).eq('trait_group_id', g.id), `Crew no longer score ${g.name} in ${t.name}.`))), ` ${g.name}`);
+        list.append(gl);
+      }
+      if (groups.length && !chosen.size) {
+        const warn = document.createElement('span');
+        warn.className = 'hint';
+        warn.style.margin = '0';
+        warn.textContent = 'Nothing ticked: crew phones have nothing to score here.';
+        list.append(warn);
+      }
+      row.append(list);
+    }
+    box.append(row);
   }
-  box.onchange = () => { allBox.checked = !box.querySelector('input:checked'); };
-  allBox.onchange = () => { if (allBox.checked) box.querySelectorAll('input').forEach((c) => { c.checked = false; }); };
+  if (!shown.length) box.innerHTML = '<p class="hint">No trial is loaded with trait groups yet.</p>';
 }
-const ticked = (box) => [...box.querySelectorAll('input:checked')].map((c) => c.value);
-
-function fillTraitForm() {
-  const sel = $('trGroup');
-  const keep = sel.value;
-  sel.innerHTML = '';
-  for (const g of tr.groups.filter((x) => !x.always_on)) sel.add(new Option(g.name, g.id));
-  sel.add(new Option('New group…', ''));
-  if ([...sel.options].some((o) => o.value === keep)) sel.value = keep;
-  $('trNewGroup').hidden = sel.value !== '';
-  tickList($('trTrials'), $('trAllTrials'), tr.trials);
-  tickList($('trPeople'), $('trEveryone'), tr.people);
-}
-$('trGroup').addEventListener('change', () => { $('trNewGroup').hidden = $('trGroup').value !== ''; });
-$('trType').addEventListener('change', () => { $('trScale').hidden = $('trType').value !== 'integer'; });
-
-// Similar names: a warning while typing (the database refuses an exact match).
-function similarTraits(name) {
-  const n = normName(name);
-  if (n.length < 3) return [];
-  return tr.traits.filter((t) => {
-    const a = normName(t.name), b = normName(t.display_name);
-    return a === n || b === n || (n.length >= 4 && (a.includes(n) || n.includes(a) || b.includes(n)));
-  });
-}
-for (const id of ['trName', 'trDisplay']) {
-  $(id).addEventListener('input', () => {
-    const found = [...new Set([...similarTraits($('trName').value), ...similarTraits($('trDisplay').value)])];
-    $('trSimilar').hidden = !found.length;
-    $('trSimilar').textContent = found.length
-      ? `Already there, check it isn't the same trait: ${found.map((t) => `${t.display_name} (${t.name}, ${kindText(t)}, per ${t.scoring_unit})`).join('; ')}`
-      : '';
-  });
-}
-
-$('traitForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const msg = $('trMsg');
-  const groupId = $('trGroup').value || null;
-  const trials = $('trAllTrials').checked ? [] : ticked($('trTrials'));
-  const people = $('trEveryone').checked ? [] : ticked($('trPeople'));
-  if (!$('trAllTrials').checked && !trials.length) return show(msg, 'Tick at least one trial (or "Every trial that uses this group").', 'err');
-  if (!$('trEveryone').checked && !people.length) return show(msg, 'Tick at least one person (or Everyone).', 'err');
-  if (!groupId && !trials.length) return show(msg, "A new group isn't in any trial yet: tick the trials this trait is for.", 'err');
-  const type = $('trType').value;
-  const shown = $('trDisplay').value;
-  $('trSave').disabled = true;
-  const { error } = await supabase.rpc('create_trait', {
-    p_name: $('trName').value, p_display_name: shown, p_description: $('trDesc').value,
-    p_group_id: groupId, p_new_group: groupId ? null : $('trNewGroup').value,
-    p_value_type: type, p_min: type === 'integer' ? Number($('trMin').value) : null, p_max: type === 'integer' ? Number($('trMax').value) : null,
-    p_scoring_unit: $('trUnit').value, p_trials: trials, p_people: people,
-  });
-  $('trSave').disabled = false;
-  if (error) return show(msg, error.message, 'err');
-  $('traitForm').reset();
-  $('trSimilar').hidden = true;
-  $('trScale').hidden = false;
-  show(msg, traitsMe.isAdmin
-    ? `Added ${shown}. Phones get it the next time they open the trial with signal.`
-    : `Added ${shown}. It goes to an admin first; phones get it once it's approved.`, 'ok');
-  await loadTraits();
-});
 
 // Admins: students' new traits (Review changes).
 function showTraitReview() {
@@ -992,8 +1065,9 @@ function showTraitReview() {
     cell(`${t.display_name} (${t.name}) · ${tr.groups.find((g) => g.id === t.trait_group_id)?.name ?? ''}${t.description ? ` · ${t.description}` : ''}`);
     cell(kindText(t));
     cell(UNIT[t.scoring_unit] ?? t.scoring_unit);
-    cell(traitWhere(t));
-    cell(traitWho(t));
+    const limited = (t.trait_trials ?? []).map((x) => trialName(x.trial_id)).filter(Boolean).sort(natural);
+    cell(limited.length ? limited.join(', ') : groupTrialNames(t.trait_group_id).join(', ') || '(no trials yet)');
+    cell(traitWho(t) ?? 'Everyone');
     const td = row.insertCell();
     td.style.whiteSpace = 'nowrap';
     const button = (label, approve) => {
