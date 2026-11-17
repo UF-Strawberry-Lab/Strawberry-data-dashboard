@@ -9,13 +9,13 @@
 // build.ts), so the two always match.
 
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/+esm';
-import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './config.js?v=1794868141000';
-import { buildExport, selectionsFile, TIME_ZONE } from './lib/format.js?v=1794868141000';
-import { buildInfoExport, mapFile } from './lib/info.js?v=1794868141000';
-import { weekDates, weekNumber } from './lib/selections.js?v=1794868141000';
-import { makeZip } from './zip.js?v=1794868141000';
-import { HIGHLIGHT_COLORS, dedupeHighlightRows, parseHighlightRows } from './lib/highlights.js?v=1794868141000';
-import { parseCsv } from './lib/csv.js?v=1794868141000';
+import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './config.js?v=1794955895233';
+import { buildExport, selectionsFile, TIME_ZONE } from './lib/format.js?v=1794955895233';
+import { buildInfoExport, mapFile } from './lib/info.js?v=1794955895233';
+import { weekDates, weekNumber } from './lib/selections.js?v=1794955895233';
+import { makeZip } from './zip.js?v=1794955895233';
+import { HIGHLIGHT_COLORS, dedupeHighlightRows, parseHighlightRows } from './lib/highlights.js?v=1794955895233';
+import { parseCsv } from './lib/csv.js?v=1794955895233';
 
 // Opened from a sign-up or password-reset link? Read the address before the
 // Supabase client clears it, so the page can ask for a password straight away.
@@ -662,56 +662,121 @@ $('unassignBtn').addEventListener('click', () => void assign(false));
 
 $('reviewRefresh').addEventListener('click', () => void refreshReview());
 
+/**
+ * Items waiting for review, one collapsible group per person and day (Mark,
+ * 2026-11-17), newest day first. Each group has Approve all / Reject all,
+ * after an "are you sure"; each row keeps its own Approve / Reject.
+ *   who, day     the person and the YYYY-MM-DD day an item is grouped under
+ *   noun         [one, many]: "selection", "selections"
+ *   heads/cells  the table columns (no Date or By: those are the group)
+ *   review       approve (true) or reject (false) one item; returns the error, if any
+ *   rejectAsk    the question before rejecting one item
+ *   rejectAll    what rejecting a whole group does, for its question
+ *   order        optional: the order a group is rejected in (map edits: newest first)
+ *   redraw       draws the list again from the database
+ */
+const openGroups = new Set();   // groups left open stay open after a redraw
+function reviewGroups(box, items, o) {
+  const groups = new Map();
+  for (const x of items) {
+    const key = `${o.day(x)}|${o.who(x)}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(x);
+  }
+  const keys = [...groups.keys()].sort((a, b) => b.localeCompare(a));   // newest day first
+  for (const key of keys) {
+    const list = groups.get(key);
+    const [day, who] = [o.day(list[0]), o.who(list[0])];
+    const count = `${list.length} ${list.length === 1 ? o.noun[0] : o.noun[1]}`;
+    const details = document.createElement('details');
+    details.className = 'rgroup';
+    const id = `${box.id}|${key}`;
+    details.open = openGroups.has(id);
+    details.addEventListener('toggle', () => { if (details.open) openGroups.add(id); else openGroups.delete(id); });
+    const summary = document.createElement('summary');
+    summary.textContent = `${who} · ${md(day)} · ${count}`;
+    details.append(summary);
+
+    const buttons = [];
+    const busy = (on) => buttons.forEach((b) => { b.disabled = on; });
+    const button = (label, quiet, onClick) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      if (quiet) b.className = 'quiet';
+      b.addEventListener('click', onClick);
+      buttons.push(b);
+      return b;
+    };
+    /** Review several items, one by one; stop at the first refusal and say why. */
+    const reviewAll = async (xs, approve) => {
+      busy(true);
+      let done = 0;
+      for (const x of xs) {
+        const err = await o.review(x, approve);
+        if (err) { show($('reviewMsg'), `${done} of ${xs.length} done, then: ${err.message}`, 'err'); break; }
+        done++;
+      }
+      if (done === xs.length) show($('reviewMsg'), `${approve ? 'Approved' : 'Rejected'} ${done} ${done === 1 ? o.noun[0] : o.noun[1]} by ${who} (${md(day)}).`, 'ok');
+      await o.redraw();
+    };
+
+    const bulk = document.createElement('div');
+    bulk.className = 'row';
+    bulk.style.marginTop = '8px';
+    bulk.append(
+      button(`Approve all ${list.length}`, false, () => {
+        if (confirm(`Approve all ${count} by ${who} on ${md(day)}?`)) void reviewAll(list, true);
+      }),
+      button(`Reject all ${list.length}`, true, () => {
+        if (confirm(`Reject all ${count} by ${who} on ${md(day)}? ${o.rejectAll}`)) void reviewAll(o.order ? o.order(list) : list, false);
+      }),
+    );
+    details.append(bulk);
+
+    const table = document.createElement('table');
+    table.className = 'lists';
+    const head = table.insertRow();
+    for (const h of [...o.heads, '']) { const th = document.createElement('th'); th.textContent = h; head.append(th); }
+    for (const x of list) {
+      const tr = table.insertRow();
+      for (const text of o.cells(x)) tr.insertCell().textContent = text;
+      const td = tr.insertCell();
+      td.style.whiteSpace = 'nowrap';
+      td.append(
+        button('Approve', false, () => void reviewAll([x], true)),
+        ' ',
+        button('Reject', true, () => { if (confirm(o.rejectAsk(x))) void reviewAll([x], false); }),
+      );
+    }
+    details.append(stackable(table));
+    box.append(details);
+  }
+}
+
 async function showReview() {
   const box = $('reviewList');
   const { data, error } = await supabase.rpc('pending_selections');
   box.innerHTML = '';
-  $('approveAll').hidden = true;
   waiting.selections = data?.length ?? 0;
   showWaiting();
   if (error) { box.textContent = error.message; return; }
   if (!data.length) { box.innerHTML = '<p class="hint">Nothing waiting for review.</p>'; return; }
-  const table = document.createElement('table');
-  table.className = 'lists';
-  table.innerHTML = '<tr><th>Date</th><th>By</th><th>Where</th><th>Genotype</th><th></th></tr>';
-  for (const x of data) {
-    const tr = table.insertRow();
-    const cell = (text) => { const td = tr.insertCell(); td.textContent = text; return td; };
-    cell(md(x.visit_date));
-    cell(x.researcher);
-    const bed = x.trial_bed ? `bed ${x.trial_bed}` : `${x.block}-${x.field_bed}`;
-    cell(`${x.trials ?? ''} · ${bed} · pos ${x.plot_position}`);
-    cell(`${x.genotype}${x.stake_label !== x.genotype ? ` (stake ${x.stake_label})` : ''}`);
-    const td = tr.insertCell();
-    td.style.whiteSpace = 'nowrap';
-    const button = (label, approve) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.textContent = label;
-      if (!approve) b.className = 'quiet';
-      b.addEventListener('click', async () => {
-        if (!approve && !confirm(`Reject ${x.researcher}'s selection of ${x.genotype}? The YES is deleted.`)) return;
-        td.querySelectorAll('button').forEach((y) => { y.disabled = true; });
-        const { error: err } = await supabase.rpc('review_selection', { p_observation_id: x.observation_id, p_approve: approve });
-        if (err) { show($('reviewMsg'), err.message, 'err'); td.querySelectorAll('button').forEach((y) => { y.disabled = false; }); return; }
-        await showReview();
-      });
-      return b;
-    };
-    td.append(button('Approve', true), ' ', button('Reject', false));
-  }
-  box.append(stackable(table));
-  $('approveAll').hidden = false;
-  $('approveAll').onclick = async () => {
-    if (!confirm(`Approve all ${data.length} selections shown?`)) return;
-    $('approveAll').disabled = true;
-    for (const x of data) {
-      const { error: err } = await supabase.rpc('review_selection', { p_observation_id: x.observation_id, p_approve: true });
-      if (err) show($('reviewMsg'), err.message, 'err');
-    }
-    $('approveAll').disabled = false;
-    await showReview();
-  };
+  reviewGroups(box, data, {
+    who: (x) => x.researcher,
+    day: (x) => x.visit_date,
+    noun: ['selection', 'selections'],
+    heads: ['Where', 'Genotype'],
+    cells: (x) => [
+      `${x.trials ?? ''} · ${x.trial_bed ? `bed ${x.trial_bed}` : `${x.block}-${x.field_bed}`} · pos ${x.plot_position}`,
+      `${x.genotype}${x.stake_label !== x.genotype ? ` (stake ${x.stake_label})` : ''}`,
+    ],
+    review: async (x, approve) =>
+      (await supabase.rpc('review_selection', { p_observation_id: x.observation_id, p_approve: approve })).error,
+    rejectAsk: (x) => `Reject ${x.researcher}'s selection of ${x.genotype}? The YES is deleted.`,
+    rejectAll: 'Their YES scores are deleted.',
+    redraw: showReview,
+  });
 }
 
 // Crew field-map edits: already applied; Approve keeps, Reject undoes (review_map_change()).
@@ -725,35 +790,23 @@ async function showMapChanges() {
   showWaiting();
   if (error) { box.textContent = error.message; return; }
   if (!data.length) { box.innerHTML = '<p class="hint">Nothing waiting for review.</p>'; return; }
-  const table = document.createElement('table');
-  table.className = 'lists';
-  table.innerHTML = '<tr><th>Date</th><th>By</th><th>Edit</th><th>Where</th><th></th></tr>';
-  for (const x of data) {
-    const tr = table.insertRow();
-    const cell = (text) => { const td = tr.insertCell(); td.textContent = text; return td; };
-    cell(md(x.changed_at.slice(0, 10)));
-    cell(x.researcher);
-    cell(`${CHANGE_LABELS[x.change_type] ?? x.change_type}: ${x.description ?? ''}`);
-    cell(x.block ? `${x.trials ?? ''} · ${x.block}-${x.field_bed} · pos ${x.plot_position} (stake ${x.stake_label})` : '');
-    const td = tr.insertCell();
-    td.style.whiteSpace = 'nowrap';
-    const button = (label, approve) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.textContent = label;
-      if (!approve) b.className = 'quiet';
-      b.addEventListener('click', async () => {
-        if (!approve && !confirm('Undo this edit?')) return;
-        td.querySelectorAll('button').forEach((y) => { y.disabled = true; });
-        const { error: err } = await supabase.rpc('review_map_change', { p_change_id: x.change_id, p_approve: approve });
-        if (err) { show($('reviewMsg'), err.message, 'err'); td.querySelectorAll('button').forEach((y) => { y.disabled = false; }); return; }
-        await showMapChanges();
-      });
-      return b;
-    };
-    td.append(button('Approve', true), ' ', button('Reject', false));
-  }
-  box.append(stackable(table));
+  reviewGroups(box, data, {
+    who: (x) => x.researcher,
+    day: (x) => x.changed_at.slice(0, 10),
+    noun: ['edit', 'edits'],
+    heads: ['Edit', 'Where'],
+    cells: (x) => [
+      `${CHANGE_LABELS[x.change_type] ?? x.change_type}: ${x.description ?? ''}`,
+      x.block ? `${x.trials ?? ''} · ${x.block}-${x.field_bed} · pos ${x.plot_position} (stake ${x.stake_label})` : '',
+    ],
+    review: async (x, approve) =>
+      (await supabase.rpc('review_map_change', { p_change_id: x.change_id, p_approve: approve })).error,
+    rejectAsk: () => 'Undo this edit?',
+    rejectAll: 'Each edit is undone (scores follow the plot back to its original genotype).',
+    // Undo the newest edit first, so two edits on one plot unwind in order.
+    order: (xs) => [...xs].sort((a, b) => b.changed_at.localeCompare(a.changed_at)),
+    redraw: showMapChanges,
+  });
 }
 
 // ---------------- highlight lists ----------------
@@ -1011,7 +1064,7 @@ async function loadTraits() {
   const results = await Promise.all([
     supabase.from('traits').select('id, name, display_name, description, value_type, scale_min, scale_max, scoring_unit, sort_order, active, status, value_label, carries_forward, trait_group_id, creator:researchers!traits_created_by_fkey(name), trait_trials(trial_id), trait_researchers(researcher_id)'),
     supabase.from('trait_groups').select('id, name, sort_order, always_on').order('sort_order'),
-    supabase.from('trials').select('id, name, expected_plots_per_bed, seasons!inner(is_current)').eq('seasons.is_current', true).order('name'),
+    supabase.from('trials').select('id, name, expected_plots_per_bed, offer_to_crew, seasons!inner(is_current)').eq('seasons.is_current', true).order('name'),
     supabase.from('researchers').select('id, name, role').order('name'),
     supabase.from('trial_trait_groups').select('trait_group_id, trial_id'),
     supabase.from('trait_group_extras').select('trait_group_id, trait_id, sort_order'),
@@ -1125,11 +1178,13 @@ function showCrewSetup() {
     });
     return cb;
   };
-  // Only trials crew could score: imported with their trial settings (plots per bed set,
-  // as on the export page) and with trait groups. One already on stays listed, so it
-  // can be switched off.
-  const ready = (t) => t.expected_plots_per_bed != null && trialGroups(t.id).length > 0;
-  const shown = tr.trials.filter((t) => ready(t) || tr.crewTrials.has(t.id));
+  // Only the trials offered to crew: trials.offer_to_crew, ticked in Supabase (Mark,
+  // 2026-11-17: CGS, MainStage1, MainStage3, Phyto). One already on crew phones stays
+  // listed, so it can be switched off.
+  const shown = tr.trials.filter((t) => t.offer_to_crew || tr.crewTrials.has(t.id));
+  if (!shown.length) {
+    box.innerHTML = '<p class="hint">No trials offered to crew. Tick offer_to_crew on a trial in Supabase (Table Editor → trials).</p>';
+  }
   for (const t of shown) {
     const on = tr.crewTrials.has(t.id);
     const row = document.createElement('div');
