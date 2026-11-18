@@ -9,14 +9,14 @@
 // build.ts), so the two always match.
 
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/+esm';
-import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './config.js?v=1795030718879';
-import { buildExport, selectionsFile, TIME_ZONE } from './lib/format.js?v=1795030718879';
-import { buildInfoExport, mapFile } from './lib/info.js?v=1795030718879';
-import { FORMATS } from './lib/formatted.js?v=1795030718879';
-import { weekDates, weekNumber } from './lib/selections.js?v=1795030718879';
-import { makeZip } from './zip.js?v=1795030718879';
-import { HIGHLIGHT_COLORS, dedupeHighlightRows, parseHighlightRows } from './lib/highlights.js?v=1795030718879';
-import { parseCsv } from './lib/csv.js?v=1795030718879';
+import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './config.js?v=1795034313375';
+import { buildExport, selectionsFile, TIME_ZONE } from './lib/format.js?v=1795034313375';
+import { buildInfoExport, mapFile } from './lib/info.js?v=1795034313375';
+import { FORMATS } from './lib/formatted.js?v=1795034313375';
+import { weekDates, weekNumber } from './lib/selections.js?v=1795034313375';
+import { makeZip } from './zip.js?v=1795034313375';
+import { HIGHLIGHT_COLORS, dedupeHighlightRows, parseHighlightRows } from './lib/highlights.js?v=1795034313375';
+import { parseCsv } from './lib/csv.js?v=1795034313375';
 
 // Opened from a sign-up or password-reset link? Read the address before the
 // Supabase client clears it, so the page can ask for a password straight away.
