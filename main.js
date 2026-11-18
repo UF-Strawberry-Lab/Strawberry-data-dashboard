@@ -2,21 +2,21 @@
 // and saves scores.csv + plot_visits.csv to a folder of their choosing.
 //
 // The data comes from the database function export_data()
-// (supabase/migrations/20261110000001_export_access.sql), which refuses
-// anyone who isn't an admin or student (researchers.role), and gives students
-// only data collected by students. The files are built by
+// (latest: supabase/migrations/20261118000001_student_export_all.sql), which
+// refuses anyone who isn't an admin or student (researchers.role); students
+// get everyone's data in the trials they may open. The files are built by
 // the same code as `npm run export` (scripts/export/format.ts, copied in by
 // build.ts), so the two always match.
 
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/+esm';
-import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './config.js?v=1794968737199';
-import { buildExport, selectionsFile, TIME_ZONE } from './lib/format.js?v=1794968737199';
-import { buildInfoExport, mapFile } from './lib/info.js?v=1794968737199';
-import { FORMATS } from './lib/formatted.js?v=1794968737199';
-import { weekDates, weekNumber } from './lib/selections.js?v=1794968737199';
-import { makeZip } from './zip.js?v=1794968737199';
-import { HIGHLIGHT_COLORS, dedupeHighlightRows, parseHighlightRows } from './lib/highlights.js?v=1794968737199';
-import { parseCsv } from './lib/csv.js?v=1794968737199';
+import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './config.js?v=1795018837507';
+import { buildExport, selectionsFile, TIME_ZONE } from './lib/format.js?v=1795018837507';
+import { buildInfoExport, mapFile } from './lib/info.js?v=1795018837507';
+import { FORMATS } from './lib/formatted.js?v=1795018837507';
+import { weekDates, weekNumber } from './lib/selections.js?v=1795018837507';
+import { makeZip } from './zip.js?v=1795018837507';
+import { HIGHLIGHT_COLORS, dedupeHighlightRows, parseHighlightRows } from './lib/highlights.js?v=1795018837507';
+import { parseCsv } from './lib/csv.js?v=1795018837507';
 
 // Opened from a sign-up or password-reset link? Read the address before the
 // Supabase client clears it, so the page can ask for a password straight away.
@@ -183,7 +183,6 @@ async function start() {
     $('notApproved').hidden = false;
     return;
   }
-  if (role === 'student') $('studentHint').hidden = false;
 
   // Trials of the current season.
   const { data: trials, error } = await supabase.rpc('export_trials');   // every trial, for approved exporters
@@ -211,9 +210,11 @@ async function start() {
     else if (e.target.name === 'trial') $('allTrials').checked = !box.querySelector('input[name=trial]:checked');
   });
 
-  // Formatted trial data: the trials with a format.
+  // Formatted trial data: the trials with a format that this account may export.
+  const mine = new Set(trials.map((t) => t.name));
+  const formatted = Object.keys(FORMATS).filter((name) => mine.has(name));
   $('fmtTrial').innerHTML = '';
-  for (const name of Object.keys(FORMATS)) $('fmtTrial').add(new Option(name, name));
+  for (const name of formatted) $('fmtTrial').add(new Option(name, name));
 
   // Weeks so far this season, in both week lists (Raw trial data, Selections).
   const current = weekNumber(floridaNow().today, season.start_date);
@@ -228,8 +229,12 @@ async function start() {
   $('saveHint').textContent = canSaveAs
     ? 'Save as… asks where to save. You get one .zip with a folder holding scores.csv and plot_visits.csv.'
     : 'This browser saves the .zip to your Downloads folder (or asks where, if set up that way).';
-  // Admins: Raw and Formatted trial data, Trial/Genotype info and Selections. Students: Raw trial data only.
-  if (role === 'admin') setUpExportTabs();
+  // Admins: Raw and Formatted trial data, Trial/Genotype info and Selections.
+  // Students: Raw and Formatted trial data (Mark, 2026-11-18); Formatted only
+  // when one of their trials has a format.
+  const subs = role === 'admin' ? ['data', 'formatted', 'info', 'selections']
+    : formatted.length ? ['data', 'formatted'] : [];
+  if (subs.length) setUpExportTabs(subs);
   else $('exportForm').hidden = false;
 }
 
@@ -240,12 +245,15 @@ async function start() {
 // chosen folder, but Chrome's folder permission step failed silently on
 // Mark's computer, 2026-11-10.)
 
-/** Data export's own tabs (admins). The address keeps the choice: #export/info. */
-function setUpExportTabs() {
+/** Data export's own tabs (only the ones in subs). The address keeps the choice: #export/info. */
+function setUpExportTabs(subs) {
   $('exportTabs').hidden = false;
-  for (const b of document.querySelectorAll('#exportTabs button')) b.onclick = () => showExportTab(b.dataset.sub);
+  for (const b of document.querySelectorAll('#exportTabs button')) {
+    b.hidden = !subs.includes(b.dataset.sub);
+    b.onclick = () => showExportTab(b.dataset.sub);
+  }
   const wanted = location.hash.split('/')[1];
-  showExportTab(['data', 'formatted', 'info', 'selections'].includes(wanted) ? wanted : 'data');
+  showExportTab(subs.includes(wanted) ? wanted : 'data');
 }
 function showExportTab(name) {
   for (const f of document.querySelectorAll('[data-sub-panel]')) f.hidden = f.dataset.subPanel !== name;
@@ -360,7 +368,7 @@ function doExport(saveAs) {
   });
 }
 
-/** Formatted trial data (admins): one CSV for one trial, laid out for that trial (lib/formatted.js). */
+/** Formatted trial data (admins and students): one CSV for one trial, laid out for that trial (lib/formatted.js). */
 function doFormattedExport(saveAs) {
   const trial = $('fmtTrial').value;
   const file = `${trial}_formatted.csv`;

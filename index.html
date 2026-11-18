@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>UF Strawberry Dashboard</title>
   <meta name="robots" content="noindex">
-  <meta name="build" content="2026-11-18 02:25 UTC">
+  <meta name="build" content="2026-11-18 16:20 UTC">
   <style>
     :root {
       --bg: #FAFAF7; --card: #FFFFFF; --text: #1F2421; --muted: #6B716D; --border: #D9DCD6;
@@ -190,7 +190,7 @@
       <p>Exports are for admins and students. Ask an admin to check your role, then reload this page.</p>
     </div>
 
-    <!-- Admins: four kinds of export (Mark, 2026-11-16 and 11-17). Students see Raw trial data only, without these. -->
+    <!-- Admins: four kinds of export (Mark, 2026-11-16 and 11-17). Students: Raw and Formatted (2026-11-18). -->
     <nav class="tabs subtabs" id="exportTabs" hidden>
       <button type="button" data-sub="data">Raw trial data</button>
       <button type="button" data-sub="formatted">Formatted trial data</button>
@@ -204,7 +204,6 @@
       <label class="field" for="week">Weeks</label>
       <select id="week"></select>
       <p class="hint">Weeks run Monday to Sunday. A bed shared by two trials counts for both.</p>
-      <p class="hint" id="studentHint" hidden>Student accounts export the data collected by students.</p>
       <div class="row">
         <button id="exportBtn" type="submit">Save as…</button>
         <button id="downloadBtn" type="button" class="quiet">Download</button>
@@ -391,6 +390,6 @@
   </section>
   <p class="hint" id="version"></p>
 </main>
-<script type="module" src="./main.js?v=1794968737199"></script>
+<script type="module" src="./main.js?v=1795018837507"></script>
 </body>
 </html>
