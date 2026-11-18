@@ -9,13 +9,13 @@
 // build.ts), so the two always match.
 
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/+esm';
-import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './config.js?v=1794955895233';
-import { buildExport, selectionsFile, TIME_ZONE } from './lib/format.js?v=1794955895233';
-import { buildInfoExport, mapFile } from './lib/info.js?v=1794955895233';
-import { weekDates, weekNumber } from './lib/selections.js?v=1794955895233';
-import { makeZip } from './zip.js?v=1794955895233';
-import { HIGHLIGHT_COLORS, dedupeHighlightRows, parseHighlightRows } from './lib/highlights.js?v=1794955895233';
-import { parseCsv } from './lib/csv.js?v=1794955895233';
+import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './config.js?v=1794966370216';
+import { buildExport, selectionsFile, TIME_ZONE } from './lib/format.js?v=1794966370216';
+import { buildInfoExport, mapFile } from './lib/info.js?v=1794966370216';
+import { weekDates, weekNumber } from './lib/selections.js?v=1794966370216';
+import { makeZip } from './zip.js?v=1794966370216';
+import { HIGHLIGHT_COLORS, dedupeHighlightRows, parseHighlightRows } from './lib/highlights.js?v=1794966370216';
+import { parseCsv } from './lib/csv.js?v=1794966370216';
 
 // Opened from a sign-up or password-reset link? Read the address before the
 // Supabase client clears it, so the page can ask for a password straight away.
@@ -214,7 +214,7 @@ async function start() {
   const current = weekNumber(floridaNow().today, season.start_date);
   for (const sel of [$('week'), $('selWeek')]) {
     sel.innerHTML = '<option value="">All weeks</option>';
-    for (let n = current ?? 0; n >= 1; n--) {
+    for (let n = current ?? -1; n >= 0; n--) {   // down to Week 0, the week before the start
       const d = weekDates(n, season.start_date);
       sel.add(new Option(`Week ${n}${n === current ? ' (current)' : ''} · ${md(d.monday)} – ${md(d.sunday)}`, String(n)));
     }
@@ -327,7 +327,7 @@ async function saveZip({ saveAs, name, msg, buttons, build, single = null }) {
 
 /** export_data() for some trials (none = all) and a week (null = all weeks). */
 async function readExportData(trials, week) {
-  const range = week ? weekDates(week, season.start_date) : null;
+  const range = week !== null ? weekDates(week, season.start_date) : null;
   const { data, error } = await supabase.rpc('export_data', {
     p_trials: trials, p_from: range?.monday ?? null, p_to: range?.sunday ?? null,
   });
@@ -341,7 +341,7 @@ function doExport(saveAs) {
   const week = $('week').value ? Number($('week').value) : null;
   return saveZip({
     saveAs, msg: $('exportMsg'), buttons: [$('exportBtn'), $('downloadBtn')],
-    name: [...(trials.length ? trials : ['All_trials']), ...(week ? [`Week_${week}`] : []), floridaNow().stamp].join('_'),
+    name: [...(trials.length ? trials : ['All_trials']), ...(week !== null ? [`Week_${week}`] : []), floridaNow().stamp].join('_'),
     build: async () => {
       const result = buildExport(await readExportData(trials, week));
       return {
@@ -415,7 +415,7 @@ function doSelectionsExport(saveAs) {
   const week = $('selWeek').value ? Number($('selWeek').value) : null;
   return saveZip({
     saveAs, msg: $('selMsg'), buttons: [$('selBtn'), $('selDownloadBtn')], single: 'selections.csv',
-    name: ['Selections', ...(week ? [`Week_${week}`] : []), floridaNow().stamp].join('_'),
+    name: ['Selections', ...(week !== null ? [`Week_${week}`] : []), floridaNow().stamp].join('_'),
     build: async () => {
       const result = selectionsFile(await readExportData([], week));
       return { files: { 'selections.csv': result.csv }, summary: `${result.genotypes} genotypes selected.` };
