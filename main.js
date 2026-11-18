@@ -9,13 +9,14 @@
 // build.ts), so the two always match.
 
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/+esm';
-import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './config.js?v=1794968276934';
-import { buildExport, selectionsFile, TIME_ZONE } from './lib/format.js?v=1794968276934';
-import { buildInfoExport, mapFile } from './lib/info.js?v=1794968276934';
-import { weekDates, weekNumber } from './lib/selections.js?v=1794968276934';
-import { makeZip } from './zip.js?v=1794968276934';
-import { HIGHLIGHT_COLORS, dedupeHighlightRows, parseHighlightRows } from './lib/highlights.js?v=1794968276934';
-import { parseCsv } from './lib/csv.js?v=1794968276934';
+import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './config.js?v=1794968737199';
+import { buildExport, selectionsFile, TIME_ZONE } from './lib/format.js?v=1794968737199';
+import { buildInfoExport, mapFile } from './lib/info.js?v=1794968737199';
+import { FORMATS } from './lib/formatted.js?v=1794968737199';
+import { weekDates, weekNumber } from './lib/selections.js?v=1794968737199';
+import { makeZip } from './zip.js?v=1794968737199';
+import { HIGHLIGHT_COLORS, dedupeHighlightRows, parseHighlightRows } from './lib/highlights.js?v=1794968737199';
+import { parseCsv } from './lib/csv.js?v=1794968737199';
 
 // Opened from a sign-up or password-reset link? Read the address before the
 // Supabase client clears it, so the page can ask for a password straight away.
@@ -210,7 +211,11 @@ async function start() {
     else if (e.target.name === 'trial') $('allTrials').checked = !box.querySelector('input[name=trial]:checked');
   });
 
-  // Weeks so far this season, in both week lists (Trial Data, Selections).
+  // Formatted trial data: the trials with a format.
+  $('fmtTrial').innerHTML = '';
+  for (const name of Object.keys(FORMATS)) $('fmtTrial').add(new Option(name, name));
+
+  // Weeks so far this season, in both week lists (Raw trial data, Selections).
   const current = weekNumber(floridaNow().today, season.start_date);
   for (const sel of [$('week'), $('selWeek')]) {
     sel.innerHTML = '<option value="">All weeks</option>';
@@ -223,7 +228,7 @@ async function start() {
   $('saveHint').textContent = canSaveAs
     ? 'Save as… asks where to save. You get one .zip with a folder holding scores.csv and plot_visits.csv.'
     : 'This browser saves the .zip to your Downloads folder (or asks where, if set up that way).';
-  // Admins: Trial Data, Trial/Genotype info and Selections. Students: Trial Data only.
+  // Admins: Raw and Formatted trial data, Trial/Genotype info and Selections. Students: Raw trial data only.
   if (role === 'admin') setUpExportTabs();
   else $('exportForm').hidden = false;
 }
@@ -240,7 +245,7 @@ function setUpExportTabs() {
   $('exportTabs').hidden = false;
   for (const b of document.querySelectorAll('#exportTabs button')) b.onclick = () => showExportTab(b.dataset.sub);
   const wanted = location.hash.split('/')[1];
-  showExportTab(['data', 'info', 'selections'].includes(wanted) ? wanted : 'data');
+  showExportTab(['data', 'formatted', 'info', 'selections'].includes(wanted) ? wanted : 'data');
 }
 function showExportTab(name) {
   for (const f of document.querySelectorAll('[data-sub-panel]')) f.hidden = f.dataset.subPanel !== name;
@@ -250,6 +255,8 @@ function showExportTab(name) {
 
 $('exportForm').addEventListener('submit', (e) => { e.preventDefault(); void doExport(canSaveAs); });
 $('downloadBtn').addEventListener('click', () => void doExport(false));
+$('fmtForm').addEventListener('submit', (e) => { e.preventDefault(); void doFormattedExport(canSaveAs); });
+$('fmtDownloadBtn').addEventListener('click', () => void doFormattedExport(false));
 $('infoForm').addEventListener('submit', (e) => { e.preventDefault(); void doInfoExport(canSaveAs); });
 $('infoDownloadBtn').addEventListener('click', () => void doInfoExport(false));
 $('selForm').addEventListener('submit', (e) => { e.preventDefault(); void doSelectionsExport(canSaveAs); });
@@ -335,7 +342,7 @@ async function readExportData(trials, week) {
   return data;
 }
 
-/** Trial Data: scores.csv and plot_visits.csv. */
+/** Raw trial data: scores.csv and plot_visits.csv. */
 function doExport(saveAs) {
   const trials = [...document.querySelectorAll('input[name=trial]:checked')].map((c) => c.value);
   const week = $('week').value ? Number($('week').value) : null;
@@ -349,6 +356,22 @@ function doExport(saveAs) {
         summary: `${csvRows(result.files['scores.csv'])} score rows, ${csvRows(result.files['plot_visits.csv'])} plot visits ` +
           `(${result.scores} scores, ${result.notes} notes).`,
       };
+    },
+  });
+}
+
+/** Formatted trial data (admins): one CSV for one trial, laid out for that trial (lib/formatted.js). */
+function doFormattedExport(saveAs) {
+  const trial = $('fmtTrial').value;
+  const file = `${trial}_formatted.csv`;
+  return saveZip({
+    saveAs, msg: $('fmtMsg'), buttons: [$('fmtBtn'), $('fmtDownloadBtn')], single: file,
+    name: `${trial}_formatted_${floridaNow().stamp}`,
+    build: async () => {
+      const { data, error } = await supabase.rpc('export_formatted', { p_trial: trial });
+      if (error) throw new Error(error.message);
+      const result = FORMATS[trial](data, floridaNow().today);
+      return { files: { [file]: result.csv }, summary: `${result.plots} plots.` };
     },
   });
 }

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>UF Strawberry Dashboard</title>
   <meta name="robots" content="noindex">
-  <meta name="build" content="2026-11-18 02:17 UTC">
+  <meta name="build" content="2026-11-18 02:25 UTC">
   <style>
     :root {
       --bg: #FAFAF7; --card: #FFFFFF; --text: #1F2421; --muted: #6B716D; --border: #D9DCD6;
@@ -190,9 +190,10 @@
       <p>Exports are for admins and students. Ask an admin to check your role, then reload this page.</p>
     </div>
 
-    <!-- Admins: three kinds of export (Mark, 2026-11-16). Students see Trial Data only, without these. -->
+    <!-- Admins: four kinds of export (Mark, 2026-11-16 and 11-17). Students see Raw trial data only, without these. -->
     <nav class="tabs subtabs" id="exportTabs" hidden>
-      <button type="button" data-sub="data">Trial Data</button>
+      <button type="button" data-sub="data">Raw trial data</button>
+      <button type="button" data-sub="formatted">Formatted trial data</button>
       <button type="button" data-sub="info">Trial/Genotype info</button>
       <button type="button" data-sub="selections">Selections</button>
     </nav>
@@ -210,6 +211,19 @@
       </div>
       <p class="hint" id="saveHint"></p>
       <div class="msg" id="exportMsg" hidden></div>
+    </form>
+
+    <form class="card" id="fmtForm" data-sub-panel="formatted" hidden>
+      <h2>Formatted trial data</h2>
+      <p>One file per trial, laid out for that trial. Phyto: one row per plot of the whole map, with Plants,
+        the plants dead at the end of each week (Dead_Week0, Dead_Week1, ...) and the plot notes as Comment.</p>
+      <label class="field" for="fmtTrial">Trial</label>
+      <select id="fmtTrial"></select>
+      <div class="row">
+        <button id="fmtBtn" type="submit">Save as…</button>
+        <button id="fmtDownloadBtn" type="button" class="quiet">Download</button>
+      </div>
+      <div class="msg" id="fmtMsg" hidden></div>
     </form>
 
     <form class="card" id="infoForm" data-sub-panel="info" hidden>
@@ -377,6 +391,6 @@
   </section>
   <p class="hint" id="version"></p>
 </main>
-<script type="module" src="./main.js?v=1794968276934"></script>
+<script type="module" src="./main.js?v=1794968737199"></script>
 </body>
 </html>
