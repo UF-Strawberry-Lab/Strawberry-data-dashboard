@@ -9,13 +9,13 @@
 // build.ts), so the two always match.
 
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/+esm';
-import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './config.js?v=1794966370216';
-import { buildExport, selectionsFile, TIME_ZONE } from './lib/format.js?v=1794966370216';
-import { buildInfoExport, mapFile } from './lib/info.js?v=1794966370216';
-import { weekDates, weekNumber } from './lib/selections.js?v=1794966370216';
-import { makeZip } from './zip.js?v=1794966370216';
-import { HIGHLIGHT_COLORS, dedupeHighlightRows, parseHighlightRows } from './lib/highlights.js?v=1794966370216';
-import { parseCsv } from './lib/csv.js?v=1794966370216';
+import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './config.js?v=1794967721487';
+import { buildExport, selectionsFile, TIME_ZONE } from './lib/format.js?v=1794967721487';
+import { buildInfoExport, mapFile } from './lib/info.js?v=1794967721487';
+import { weekDates, weekNumber } from './lib/selections.js?v=1794967721487';
+import { makeZip } from './zip.js?v=1794967721487';
+import { HIGHLIGHT_COLORS, dedupeHighlightRows, parseHighlightRows } from './lib/highlights.js?v=1794967721487';
+import { parseCsv } from './lib/csv.js?v=1794967721487';
 
 // Opened from a sign-up or password-reset link? Read the address before the
 // Supabase client clears it, so the page can ask for a password straight away.
@@ -779,8 +779,8 @@ async function showReview() {
   });
 }
 
-// Crew field-map edits: already applied; Approve keeps, Reject undoes (review_map_change()).
-const CHANGE_LABELS = { change_genotype: 'Changed genotype', add_genotype: 'Added genotype', add_plot: 'Added plot' };
+// Field-map edits waiting for review (crew; students' not-planted fixes): already applied; Approve keeps, Reject undoes (review_map_change()).
+const CHANGE_LABELS = { change_genotype: 'Changed genotype', add_genotype: 'Added genotype', add_plot: 'Added plot', set_planted: 'Planted' };
 
 async function showMapChanges() {
   const box = $('mapChangeList');
