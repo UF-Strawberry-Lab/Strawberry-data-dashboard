@@ -9,14 +9,14 @@
 // build.ts), so the two always match.
 
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/+esm';
-import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './config.js?v=1795097226893';
-import { buildExport, selectionsFile, TIME_ZONE } from './lib/format.js?v=1795097226893';
-import { buildInfoExport, mapFile } from './lib/info.js?v=1795097226893';
-import { FORMATS } from './lib/formatted.js?v=1795097226893';
-import { EARLIEST_LISTED_WEEK, weekDates, weekNumber } from './lib/selections.js?v=1795097226893';
-import { makeZip } from './zip.js?v=1795097226893';
-import { HIGHLIGHT_COLORS, dedupeHighlightRows, parseHighlightRows } from './lib/highlights.js?v=1795097226893';
-import { parseCsv } from './lib/csv.js?v=1795097226893';
+import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './config.js?v=1795114105300';
+import { buildExport, selectionsFile, TIME_ZONE } from './lib/format.js?v=1795114105300';
+import { buildInfoExport, mapFile } from './lib/info.js?v=1795114105300';
+import { FORMATS } from './lib/formatted.js?v=1795114105300';
+import { EARLIEST_LISTED_WEEK, weekDates, weekNumber } from './lib/selections.js?v=1795114105300';
+import { makeZip } from './zip.js?v=1795114105300';
+import { HIGHLIGHT_COLORS, dedupeHighlightRows, parseHighlightRows } from './lib/highlights.js?v=1795114105300';
+import { parseCsv } from './lib/csv.js?v=1795114105300';
 
 // Opened from a sign-up or password-reset link? Read the address before the
 // Supabase client clears it, so the page can ask for a password straight away.
@@ -1076,6 +1076,7 @@ const COUNT_WHEEL = ['MktNo', 'Cull'];   // packages/shared controls.ts COUNT_WH
 function kindText(t) {
   if (t.value_type === 'yes_no') return t.carries_forward ? 'Yes / No, stays on later visits' : 'Yes / No';
   if (t.value_type === 'sequence') return `Numbered: ${t.value_label ?? ''}1, ${t.value_label ?? ''}2, …`;
+  if (t.value_type === 'choices') return `Tick boxes: ${(t.value_label ?? '').split(';').join(', ')} (any number ticked)`;
   if (t.value_type === 'decimal') return `Number ${Number(t.scale_min).toFixed(1)}–${Number(t.scale_max).toFixed(1)} (digit wheels)`;
   if (COUNT_WHEEL.includes(t.name)) return `Count ${Number(t.scale_min)}–${Number(t.scale_max)} (wheel, starts at 0)`;
   return `Score ${Number(t.scale_min)}–${Number(t.scale_max)}`;
