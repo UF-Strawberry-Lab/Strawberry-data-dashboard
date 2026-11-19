@@ -9,14 +9,14 @@
 // build.ts), so the two always match.
 
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/+esm';
-import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './config.js?v=1795096406072';
-import { buildExport, selectionsFile, TIME_ZONE } from './lib/format.js?v=1795096406072';
-import { buildInfoExport, mapFile } from './lib/info.js?v=1795096406072';
-import { FORMATS } from './lib/formatted.js?v=1795096406072';
-import { EARLIEST_LISTED_WEEK, weekDates, weekNumber } from './lib/selections.js?v=1795096406072';
-import { makeZip } from './zip.js?v=1795096406072';
-import { HIGHLIGHT_COLORS, dedupeHighlightRows, parseHighlightRows } from './lib/highlights.js?v=1795096406072';
-import { parseCsv } from './lib/csv.js?v=1795096406072';
+import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './config.js?v=1795097226893';
+import { buildExport, selectionsFile, TIME_ZONE } from './lib/format.js?v=1795097226893';
+import { buildInfoExport, mapFile } from './lib/info.js?v=1795097226893';
+import { FORMATS } from './lib/formatted.js?v=1795097226893';
+import { EARLIEST_LISTED_WEEK, weekDates, weekNumber } from './lib/selections.js?v=1795097226893';
+import { makeZip } from './zip.js?v=1795097226893';
+import { HIGHLIGHT_COLORS, dedupeHighlightRows, parseHighlightRows } from './lib/highlights.js?v=1795097226893';
+import { parseCsv } from './lib/csv.js?v=1795097226893';
 
 // Opened from a sign-up or password-reset link? Read the address before the
 // Supabase client clears it, so the page can ask for a password straight away.
@@ -299,7 +299,8 @@ async function saveZip({ saveAs, name, msg, buttons, build, single = null }) {
           : { description: 'Zip file', accept: { 'application/zip': ['.zip'] } }],
       });
     } catch (err) {
-      if (err?.name === 'AbortError') return show(msg, 'Cancelled, nothing was saved.', 'err');
+      // The browser reports a refused folder (OneDrive, Mark 2026-11-19) the same as a closed dialog.
+      if (err?.name === 'AbortError') return show(msg, 'Cancelled, nothing was saved. OneDrive folders may not work with Save as; use Download.', 'err');
       note = `\n(Save as didn't work: ${err?.name ?? ''} ${err?.message ?? err}. Downloaded instead.)`;
     }
   }
