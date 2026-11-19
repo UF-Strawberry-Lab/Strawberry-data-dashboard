@@ -9,14 +9,14 @@
 // build.ts), so the two always match.
 
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/+esm';
-import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './config.js?v=1795114105300';
-import { buildExport, selectionsFile, TIME_ZONE } from './lib/format.js?v=1795114105300';
-import { buildInfoExport, mapFile } from './lib/info.js?v=1795114105300';
-import { FORMATS } from './lib/formatted.js?v=1795114105300';
-import { EARLIEST_LISTED_WEEK, weekDates, weekNumber } from './lib/selections.js?v=1795114105300';
-import { makeZip } from './zip.js?v=1795114105300';
-import { HIGHLIGHT_COLORS, dedupeHighlightRows, parseHighlightRows } from './lib/highlights.js?v=1795114105300';
-import { parseCsv } from './lib/csv.js?v=1795114105300';
+import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './config.js?v=1795126245767';
+import { buildExport, selectionsFile, TIME_ZONE } from './lib/format.js?v=1795126245767';
+import { buildInfoExport, mapFile } from './lib/info.js?v=1795126245767';
+import { FORMATS } from './lib/formatted.js?v=1795126245767';
+import { EARLIEST_LISTED_WEEK, weekDates, weekNumber } from './lib/selections.js?v=1795126245767';
+import { makeZip } from './zip.js?v=1795126245767';
+import { HIGHLIGHT_COLORS, dedupeHighlightRows, parseHighlightRows } from './lib/highlights.js?v=1795126245767';
+import { parseCsv } from './lib/csv.js?v=1795126245767';
 
 // Opened from a sign-up or password-reset link? Read the address before the
 // Supabase client clears it, so the page can ask for a password straight away.
@@ -220,7 +220,7 @@ async function start() {
   const current = weekNumber(floridaNow().today, season.start_date);
   for (const sel of [$('week'), $('selWeek')]) {
     sel.innerHTML = '<option value="">All weeks</option>';
-    for (let n = current ?? EARLIEST_LISTED_WEEK - 1; n >= EARLIEST_LISTED_WEEK; n--) {   // down to Week -1 (before the start: 0, -1)
+    for (let n = current ?? EARLIEST_LISTED_WEEK - 1; n >= EARLIEST_LISTED_WEEK; n--) {   // down to EARLIEST_LISTED_WEEK (before the start: 0, -1, -2)
       const d = weekDates(n, season.start_date);
       sel.add(new Option(`Week ${n}${n === current ? ' (current)' : ''} · ${md(d.monday)} – ${md(d.sunday)}`, String(n)));
     }
