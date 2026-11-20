@@ -9,14 +9,14 @@
 // build.ts), so the two always match.
 
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/+esm';
-import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './config.js?v=1795152816863';
-import { buildExport, selectionsFile, TIME_ZONE } from './lib/format.js?v=1795152816863';
-import { buildInfoExport, mapFile } from './lib/info.js?v=1795152816863';
-import { FORMATS } from './lib/formatted.js?v=1795152816863';
-import { EARLIEST_LISTED_WEEK, weekDates, weekNumber } from './lib/selections.js?v=1795152816863';
-import { makeZip } from './zip.js?v=1795152816863';
-import { HIGHLIGHT_COLORS, dedupeHighlightRows, parseHighlightRows } from './lib/highlights.js?v=1795152816863';
-import { parseCsv } from './lib/csv.js?v=1795152816863';
+import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './config.js?v=1795153792126';
+import { buildExport, selectionsFile, TIME_ZONE } from './lib/format.js?v=1795153792126';
+import { buildInfoExport, mapFile } from './lib/info.js?v=1795153792126';
+import { FORMATS } from './lib/formatted.js?v=1795153792126';
+import { EARLIEST_LISTED_WEEK, weekDates, weekNumber } from './lib/selections.js?v=1795153792126';
+import { makeZip } from './zip.js?v=1795153792126';
+import { HIGHLIGHT_COLORS, dedupeHighlightRows, parseHighlightRows } from './lib/highlights.js?v=1795153792126';
+import { parseCsv } from './lib/csv.js?v=1795153792126';
 
 // Opened from a sign-up or password-reset link? Read the address before the
 // Supabase client clears it, so the page can ask for a password straight away.
@@ -212,7 +212,7 @@ async function start() {
 
   // Formatted trial data: the trials with a format that this account may export.
   const mine = new Set(trials.map((t) => t.name));
-  const formatted = Object.keys(FORMATS).filter((name) => mine.has(name));
+  const formatted = Object.keys(FORMATS).filter((name) => mine.has(FORMATS[name].trial));
   $('fmtTrial').innerHTML = '';
   for (const name of formatted) $('fmtTrial').add(new Option(name, name));
 
@@ -371,15 +371,15 @@ function doExport(saveAs) {
 
 /** Formatted trial data (admins and students): one CSV for one trial, laid out for that trial (lib/formatted.js). */
 function doFormattedExport(saveAs) {
-  const trial = $('fmtTrial').value;
-  const file = `${trial}_formatted.csv`;
+  const format = FORMATS[$('fmtTrial').value];
+  const file = `${format.file}.csv`;
   return saveZip({
     saveAs, msg: $('fmtMsg'), buttons: [$('fmtBtn'), $('fmtDownloadBtn')], single: file,
-    name: `${trial}_formatted_${floridaNow().stamp}`,
+    name: `${format.file}_${floridaNow().stamp}`,
     build: async () => {
-      const { data, error } = await supabase.rpc('export_formatted', { p_trial: trial });
+      const { data, error } = await supabase.rpc('export_formatted', { p_trial: format.trial });
       if (error) throw new Error(error.message);
-      const result = FORMATS[trial](data, floridaNow().today);
+      const result = format.build(data, floridaNow().today);
       return { files: { [file]: result.csv }, summary: `${result.plots} plots.` };
     },
   });
